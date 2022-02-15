@@ -6,6 +6,10 @@ struct Mat4 {
   float p[4][4];
 };
 
+struct Vec2 {
+  float x, y;
+};
+
 union Vec3 {
   struct { float x, y, z; };
   struct { float r, g, b; };
