@@ -21,6 +21,14 @@ union Vec4 {
   struct { Vec3 xyz; };
 };
 
+constexpr float PI32 = 3.14159265359f;
+
+FUNCTION
+Vec4 vec4(Vec3 a, float b) {
+  Vec4 result = { a.x,a.y,a.z,b };
+  return result;
+}
+
 FUNCTION
 Mat4 Mat4Identity() {
   Mat4 result = {
@@ -67,6 +75,19 @@ Mat4 Mat4RotationX(float rotation) {
     0,  c, s, 0,
     0,  -s, c, 0,
     0,  0, 0, 1,
+  };
+  return result;
+}
+
+FUNCTION
+Mat4 Mat4Perspective(float fov, float window_x, float window_y, float znear, float zfar) {
+  float aspect_ratio = window_y / window_x;
+  float f = (1.f / tanf((fov/2.f)*(180.f/PI32)));
+  Mat4 result = {
+    aspect_ratio*f, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (zfar)-(zfar-znear),(-zfar*znear)-(zfar - znear),
+    0,0,1,0
   };
   return result;
 }
