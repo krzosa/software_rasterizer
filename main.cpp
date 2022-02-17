@@ -26,14 +26,6 @@ OK Basic linear transformations - rotation, translation, scaling
 #include "math.h"
 #include "stb_image.h"
 
-
-// TODO:
-// Perspective correct interpolation
-// Camera
-// Perspective projection
-// Texture mapping
-// Reading OBJ
-
 struct Face { 
   int p[3]; 
   Vec2 tex[3];
@@ -88,20 +80,22 @@ float EdgeFunction(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
 FUNCTION 
 void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
                   Vec2 tex0, Vec2 tex1, Vec2 tex2) {
-  float min_x = (float)(MIN(p0.x, MIN(p1.x, p2.x)));
-  float min_y = (float)(MIN(p0.y, MIN(p1.y, p2.y)));
-  float max_x = (float)(MAX(p0.x, MAX(p1.x, p2.x)));
-  float max_y = (float)(MAX(p0.y, MAX(p1.y, p2.y)));
-  min_x = MAX(0, min_x) + 0.5f;
-  min_y = MAX(0, min_y) + 0.5f;
-  max_x = MIN(dst->x-1, max_x) + 0.5f;
-  max_y = MIN(dst->y-1, max_y) + 0.5f;
+  float min_x1 = (float)(MIN(p0.x, MIN(p1.x, p2.x)));
+  float min_y1 = (float)(MIN(p0.y, MIN(p1.y, p2.y)));
+  float max_x1 = (float)(MAX(p0.x, MAX(p1.x, p2.x)));
+  float max_y1 = (float)(MAX(p0.y, MAX(p1.y, p2.y)));
+  int min_x = (int)MAX(0, floorf(min_x1));
+  int min_y = (int)MAX(0, floorf(min_y1));
+  int max_x = (int)MIN(dst->x, ceilf(max_x1));
+  int max_y = (int)MIN(dst->y, ceilf(max_y1));
   //@Todo: Fix the proper rounding 
   //@Todo: Determine whether we need subprecision etc
 
   float area = EdgeFunction(p0, p1, p2);
   for (int y = min_y; y < max_y; y++) {
     for (int x = min_x; x < max_x; x++) {
+      int xi = (int)(x + 0.5f);
+      int yi = (int)(y + 0.5f);
       float edge1 = EdgeFunction(p0, p1, { (float)x,(float)y });
       float edge2 = EdgeFunction(p1, p2, { (float)x,(float)y });
       float edge3 = EdgeFunction(p2, p0, { (float)x,(float)y });
@@ -110,6 +104,8 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
         float w1 = edge2 / area;
         float w2 = edge3 / area;
         float w3 = edge1 / area;
+        float x_diff = xi - x;
+        float y_diff = yi - y;
 #if 1
         float u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
         float v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
@@ -122,10 +118,20 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
         float v = tex0.y * w1 + tex1.y * w2 + tex2.y * w3;
 #endif
 
-        int ui = (int)(u * (src->x - 1) + 0.5f);
-        int vi = (int)(v * (src->y - 1) + 0.5f);
-        uint32_t pixel = src->pixels[ui + (src->y - 1 - vi) * src->x];
-        dst->pixels[x + (dst->y - 1 - y) * dst->x] = pixel;
+        int ui = (int)(u * (src->x - 2) + 0.5f);
+        int vi = (int)(v * (src->y - 2) + 0.5f);
+        uint32_t *pixel = src->pixels + (ui + (src->y - 1 - vi) * src->x);
+        Vec4 pixelx1y1 = V4ABGR(*pixel);
+        Vec4 pixelx2y1 = V4ABGR(*(pixel + 1));
+        Vec4 pixelx1y2 = V4ABGR(*(pixel - src->x));
+        Vec4 pixelx2y2 = V4ABGR(*(pixel + 1 - src->x));
+
+        Vec4 blendx1 = Lerp(pixelx1y1, pixelx2y1, x_diff);
+        Vec4 blendx2 = Lerp(pixelx1y2, pixelx2y2, x_diff);
+        Vec4 result_color = Lerp(blendx1, blendx2, y_diff);
+        uint32_t color32 = ColorToU32ARGB(pixelx1y1);
+        
+        dst->pixels[xi + (dst->y - 1 - yi) * dst->x] = color32;
       }
     }
   }
@@ -153,7 +159,7 @@ void DrawLine(Image *dst, float x0, float y0, float x1, float y1) {
 }
 
 int main() {
-  OS_Init({.window_x=1280, .window_y=720});
+  OS_Init({ 1280,720 });
   float rotation = 0;
   Vec3 camera_pos = {0,0,-5};
   int x,y,n;

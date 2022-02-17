@@ -195,10 +195,42 @@ Vec3 Cross(Vec3 a, Vec3 b) {
 
 FUNCTION
 uint32_t ColorToU32ARGB(Vec4 a) {
-  uint8_t r8 = (uint8_t)(a.r * 255.f + 0.5f);
-  uint8_t g8 = (uint8_t)(a.g * 255.f + 0.5f);
-  uint8_t b8 = (uint8_t)(a.b * 255.f + 0.5f);
-  uint8_t a8 = (uint8_t)(a.a * 255.f + 0.5f);
+  uint8_t r8 = (uint8_t)(a.r * 255.f);
+  uint8_t g8 = (uint8_t)(a.g * 255.f);
+  uint8_t b8 = (uint8_t)(a.b * 255.f);
+  uint8_t a8 = (uint8_t)(a.a * 255.f);
   uint32_t result = a8 << 24 | r8 << 16 | g8 << 8 | b8;
+  return result;
+}
+
+FUNCTION
+Vec4 V4ARGB(uint32_t c) {
+  float a = ((c & 0xff000000) >> 24) / 255.f;
+  float r = ((c & 0x00ff0000) >> 16) / 255.f;
+  float g = ((c & 0x0000ff00) >> 8) / 255.f;
+  float b = ((c & 0x000000ff) >> 0) / 255.f;
+  Vec4 result = { r,g,b,a };
+  return result;
+}
+
+FUNCTION
+Vec4 V4ABGR(uint32_t c) {
+  float a = ((c & 0xff000000) >> 24) / 255.f;
+  float b = ((c & 0x00ff0000) >> 16) / 255.f;
+  float g = ((c & 0x0000ff00) >> 8) / 255.f;
+  float r = ((c & 0x000000ff) >> 0) / 255.f;
+  Vec4 result = { r,g,b,a };
+  return result;
+}
+
+FUNCTION
+float Lerp(float a, float b, float t) {
+  float result = (1.0f - t) * a + t * b;
+  return result;
+}
+
+FUNCTION
+Vec4 Lerp(Vec4 a, Vec4 b, float t) {
+  Vec4 result = {Lerp(a.x,b.x,t), Lerp(a.y,b.y,t), Lerp(a.z,b.z,t), Lerp(a.w,b.w,t) };
   return result;
 }

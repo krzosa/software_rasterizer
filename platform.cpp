@@ -60,7 +60,7 @@ void Win32_ScreenInit(int window_x, int window_y) {
   g_screen_dib = CreateDIBSection(g_window_dc, &bminfo, DIB_RGB_COLORS, (void**)&mem, 0, 0);
   g_screen_dc = CreateCompatibleDC(g_window_dc);
   screen.pixels = (uint32_t*)mem;
-  depth_buffer = (float*)malloc(window_x * window_y * sizeof(float));
+  depth_buffer = (float*)malloc((size_t)window_x * (size_t)window_y * sizeof(float));
   screen.x = window_x;
   screen.y = window_y;
 }
@@ -80,7 +80,7 @@ void OS_Init(OSInitArgs i) {
   wc.lpfnWndProc = WindowProc;
   wc.hInstance = g_hinstance;
   wc.lpszClassName = CLASS_NAME;
-  RegisterClass(&wc);
+  ASSERT(RegisterClass(&wc));
 
   g_hwnd = CreateWindowEx(
     0,                              // Optional window styles.
@@ -95,7 +95,7 @@ void OS_Init(OSInitArgs i) {
   );
   ASSERT(g_hwnd != 0);
 
-  ShowWindow(g_hwnd, g_cmdshow);
+  ShowWindow(g_hwnd, SW_SHOW);
   RECT rect;
   GetWindowRect(g_hwnd, &rect);
   g_window_dc = GetWindowDC(g_hwnd);
