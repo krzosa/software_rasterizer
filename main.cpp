@@ -94,8 +94,6 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
   float area = EdgeFunction(p0, p1, p2);
   for (int y = min_y; y < max_y; y++) {
     for (int x = min_x; x < max_x; x++) {
-      int xi = (int)(x + 0.5f);
-      int yi = (int)(y + 0.5f);
       float edge1 = EdgeFunction(p0, p1, { (float)x,(float)y });
       float edge2 = EdgeFunction(p1, p2, { (float)x,(float)y });
       float edge3 = EdgeFunction(p2, p0, { (float)x,(float)y });
@@ -104,8 +102,6 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
         float w1 = edge2 / area;
         float w2 = edge3 / area;
         float w3 = edge1 / area;
-        float x_diff = xi - x;
-        float y_diff = yi - y;
 #if 1
         float u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
         float v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
@@ -117,21 +113,25 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
         float u = tex0.x * w1 + tex1.x * w2 + tex2.x * w3;
         float v = tex0.y * w1 + tex1.y * w2 + tex2.y * w3;
 #endif
+        u = u * (src->x - 2);
+        v = v * (src->y - 2);
+        int ui = (int)(u);
+        int vi = (int)(v);
+        float udiff = u - (float)ui;
+        float vdiff = v - (float)vi;
 
-        int ui = (int)(u * (src->x - 2) + 0.5f);
-        int vi = (int)(v * (src->y - 2) + 0.5f);
         uint32_t *pixel = src->pixels + (ui + (src->y - 1 - vi) * src->x);
         Vec4 pixelx1y1 = V4ABGR(*pixel);
         Vec4 pixelx2y1 = V4ABGR(*(pixel + 1));
         Vec4 pixelx1y2 = V4ABGR(*(pixel - src->x));
         Vec4 pixelx2y2 = V4ABGR(*(pixel + 1 - src->x));
 
-        Vec4 blendx1 = Lerp(pixelx1y1, pixelx2y1, x_diff);
-        Vec4 blendx2 = Lerp(pixelx1y2, pixelx2y2, x_diff);
-        Vec4 result_color = Lerp(blendx1, blendx2, y_diff);
-        uint32_t color32 = ColorToU32ARGB(pixelx1y1);
+        Vec4 blendx1 = Lerp(pixelx1y1, pixelx2y1, udiff);
+        Vec4 blendx2 = Lerp(pixelx1y2, pixelx2y2, udiff);
+        Vec4 result_color = Lerp(blendx1, blendx2, vdiff);
+        uint32_t color32 = ColorToU32ARGB(result_color);
         
-        dst->pixels[xi + (dst->y - 1 - yi) * dst->x] = color32;
+        dst->pixels[x + (dst->y - 1 - y) * dst->x] = color32;
       }
     }
   }
@@ -163,7 +163,7 @@ int main() {
   float rotation = 0;
   Vec3 camera_pos = {0,0,-5};
   int x,y,n;
-  unsigned char *data = stbi_load("assets/cat.png", &x, &y, &n, 4);
+  unsigned char *data = stbi_load("assets/bricksx64.png", &x, &y, &n, 4);
   Image img = {(uint32_t *)data, x, y};
   Mat4 perspective = Mat4Perspective(60.f, screen.x, screen.y, 0.1f, 100.f);
   while (OS_GameLoop()) {
