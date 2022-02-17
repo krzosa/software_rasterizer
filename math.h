@@ -1,6 +1,5 @@
 #include "main.h"
-#include <math.h>
-#include <stdint.h>
+#include <intrin.h>
 
 struct Mat4 {
   float p[4][4];
@@ -41,9 +40,57 @@ Mat4 Mat4Identity() {
 }
 
 FUNCTION
+float Sin(float value) {
+  __m128 result128 = _mm_set_ps1(value);
+  result128 = _mm_sin_ps(result128);
+  float result = *(float *)&result128;
+  return result;
+}
+
+FUNCTION
+float Cos(float value) {
+  __m128 result128 = _mm_set_ps1(value);
+  result128 = _mm_cos_ps(result128);
+  float result = *(float*)&result128;
+  return result;
+}
+
+FUNCTION
+float Tan(float value) {
+  __m128 result128 = _mm_set_ps1(value);
+  result128 = _mm_tan_ps(result128);
+  float result = *(float*)&result128;
+  return result;
+}
+
+FUNCTION
+float Floor(float value) {
+  __m128 result128 = _mm_set_ps1(value);
+  result128 = _mm_floor_ps(result128);
+  float result = *(float*)&result128;
+  return result;
+}
+
+FUNCTION
+float Ceil(float value) {
+  __m128 result128 = _mm_set_ps1(value);
+  result128 = _mm_ceil_ps(result128);
+  float result = *(float*)&result128;
+  return result;
+}
+
+FUNCTION
+float Round(float value) {
+  __m128 result128 = _mm_set_ps1(value);
+  result128 = _mm_round_ps(result128, _MM_FROUND_TO_NEAREST_INT| _MM_FROUND_NO_EXC);
+  float result = *(float*)&result128;
+  return result;
+}
+
+FUNCTION
 Mat4 Mat4RotationZ(float rotation) {
-  float s = sinf(rotation);
-  float c = cosf(rotation);
+  float s = Sin(rotation);
+  float c = Cos(rotation);
   Mat4 result = {
     c, s, 0, 0,
     -s,  c, 0, 0,
@@ -55,8 +102,8 @@ Mat4 Mat4RotationZ(float rotation) {
 
 FUNCTION
 Mat4 Mat4RotationY(float rotation) {
-  float s = sinf(rotation);
-  float c = cosf(rotation);
+  float s = Sin(rotation);
+  float c = Cos(rotation);
   Mat4 result = {
     c, 0, -s, 0,
     0, 1,  0, 0,
@@ -68,8 +115,8 @@ Mat4 Mat4RotationY(float rotation) {
 
 FUNCTION
 Mat4 Mat4RotationX(float rotation) {
-  float s = sinf(rotation);
-  float c = cosf(rotation);
+  float s = Sin(rotation);
+  float c = Cos(rotation);
   Mat4 result = {
     1,  0, 0, 0,
     0,  c, s, 0,
@@ -82,7 +129,7 @@ Mat4 Mat4RotationX(float rotation) {
 FUNCTION
 Mat4 Mat4Perspective(float fov, float window_x, float window_y, float znear, float zfar) {
   float aspect_ratio = window_y / window_x;
-  float f = (1.f / tanf((fov/2.f)*(180.f/PI32)));
+  float f = (1.f / Tan((fov/2.f)*(180.f/PI32)));
   Mat4 result = {
     aspect_ratio*f, 0, 0, 0,
     0, f, 0, 0,
@@ -194,17 +241,27 @@ Vec3 Cross(Vec3 a, Vec3 b) {
 }
 
 FUNCTION
-uint32_t ColorToU32ARGB(Vec4 a) {
+U32 ColorToU32ARGB(Vec4 a) {
   uint8_t r8 = (uint8_t)(a.r * 255.f);
   uint8_t g8 = (uint8_t)(a.g * 255.f);
   uint8_t b8 = (uint8_t)(a.b * 255.f);
   uint8_t a8 = (uint8_t)(a.a * 255.f);
-  uint32_t result = a8 << 24 | r8 << 16 | g8 << 8 | b8;
+  U32 result = a8 << 24 | r8 << 16 | g8 << 8 | b8;
   return result;
 }
 
 FUNCTION
-Vec4 V4ARGB(uint32_t c) {
+U32 ColorToU32ABGR(Vec4 a) {
+  uint8_t r8 = (uint8_t)(a.r * 255.f);
+  uint8_t g8 = (uint8_t)(a.g * 255.f);
+  uint8_t b8 = (uint8_t)(a.b * 255.f);
+  uint8_t a8 = (uint8_t)(a.a * 255.f);
+  U32 result = a8 << 24 | b8 << 16 | g8 << 8 | r8;
+  return result;
+}
+
+FUNCTION
+Vec4 V4ARGB(U32 c) {
   float a = ((c & 0xff000000) >> 24) / 255.f;
   float r = ((c & 0x00ff0000) >> 16) / 255.f;
   float g = ((c & 0x0000ff00) >> 8) / 255.f;
@@ -214,7 +271,7 @@ Vec4 V4ARGB(uint32_t c) {
 }
 
 FUNCTION
-Vec4 V4ABGR(uint32_t c) {
+Vec4 V4ABGR(U32 c) {
   float a = ((c & 0xff000000) >> 24) / 255.f;
   float b = ((c & 0x00ff0000) >> 16) / 255.f;
   float g = ((c & 0x0000ff00) >> 8) / 255.f;

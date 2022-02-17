@@ -7,7 +7,8 @@ OK Culling triangles facing away from camera
 OK Texture mapping
 ? Basic math operations on Vec4 Mat4 - Muls, Dot, Cross etc. 
 OK Basic linear transformations - rotation, translation, scaling
-* Bilinear filtering of textures / subpixel precison
+OK Bilinear filtering of textures / subpixel precison
+OK Fix the gaps between triangles (it also improved look of triangle edges)
 * Perspective matrix vs simple perspective
 * Perspective correct interpolation
 * Depth buffer 
@@ -21,6 +22,10 @@ OK Basic linear transformations - rotation, translation, scaling
 *
 */
 
+#define BILINEAR_BLEND 1
+#define PERSPECTIVE_CORRECT_INTERPOLATION 1
+#define DRAW_WIREFRAME 1
+
 #include "main.h"
 #include "platform.h"
 #include "math.h"
@@ -31,7 +36,7 @@ struct Face {
   Vec2 tex[3];
 };
 
-Vec3 cube_vertices[] = {
+GLOBAL Vec3 cube_vertices[] = {
   {-1, -1,-1},
   {-1, 1, -1},
   {1, 1,  -1},
@@ -42,7 +47,7 @@ Vec3 cube_vertices[] = {
   {-1, -1,1},
 };
 
-Face cube_faces[] = {
+GLOBAL Face cube_faces[] = {
   {{1, 2, 3}, {{ 0, 0 }, { 0, 1 }, { 1, 1 }}, },
   {{1, 3, 4}, {{ 0, 0 }, { 1, 1 }, { 1, 0 }}, },
   {{4, 3, 5}, {{ 0, 0 }, { 0, 1 }, { 1, 1 }}, },
@@ -58,7 +63,7 @@ Face cube_faces[] = {
 };
 
 FUNCTION
-void DrawRect(Image* dst, float X, float Y, float w, float h, uint32_t color) {
+void DrawRect(Image* dst, float X, float Y, float w, float h, U32 color) {
   int max_x = (int)(MIN(X + w, dst->x) + 0.5f);
   int max_y = (int)(MIN(Y + h, dst->y) + 0.5f);
   int min_x = (int)(MAX(0, X) + 0.5f);
@@ -67,6 +72,40 @@ void DrawRect(Image* dst, float X, float Y, float w, float h, uint32_t color) {
   for (int y = min_y; y < max_y; y++) {
     for (int x = min_x; x < max_x; x++) {
       dst->pixels[x + (dst->y - 1 - y) * dst->x] = color;
+    }
+  }
+}
+
+FUNCTION
+void DrawBitmap(Image* dst, Image* src, Vec2 pos) {
+  I64 minx = (I64)(pos.x + 0.5f);
+  I64 miny = (I64)(pos.y + 0.5f);
+  I64 maxx = minx + src->x;
+  I64 maxy = miny + src->y;
+  I64 offsetx = 0;
+  I64 offsety = 0;
+
+  if (maxx > dst->x) {
+    maxx = dst->x;
+  }
+  if (maxy > dst->y) {
+    maxy = dst->y;
+  }
+  if (minx < 0) {
+    offsetx = -minx;
+    minx = 0;
+  }
+  if (miny < 0) {
+    offsety = -miny;
+    miny = 0;
+  }
+
+
+  for (I64 y = miny; y < maxy; y++) {
+    for (I64 x = minx; x < maxx; x++) {
+      I64 tx = x - minx + offsetx;
+      I64 ty = y - miny + offsety;
+      dst->pixels[x + (dst->y - 1 - y) * dst->x] = src->pixels[tx + (src->y - 1 - ty) * src->x];
     }
   }
 }
@@ -84,16 +123,16 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
   float min_y1 = (float)(MIN(p0.y, MIN(p1.y, p2.y)));
   float max_x1 = (float)(MAX(p0.x, MAX(p1.x, p2.x)));
   float max_y1 = (float)(MAX(p0.y, MAX(p1.y, p2.y)));
-  int min_x = (int)MAX(0, floorf(min_x1));
-  int min_y = (int)MAX(0, floorf(min_y1));
-  int max_x = (int)MIN(dst->x, ceilf(max_x1));
-  int max_y = (int)MIN(dst->y, ceilf(max_y1));
+  I64 min_x = (I64)MAX(0, Floor(min_x1));
+  I64 min_y = (I64)MAX(0, Floor(min_y1));
+  I64 max_x = (I64)MIN(dst->x, Ceil(max_x1));
+  I64 max_y = (I64)MIN(dst->y, Ceil(max_y1));
   //@Todo: Fix the proper rounding 
   //@Todo: Determine whether we need subprecision etc
 
   float area = EdgeFunction(p0, p1, p2);
-  for (int y = min_y; y < max_y; y++) {
-    for (int x = min_x; x < max_x; x++) {
+  for (I64 y = min_y; y < max_y; y++) {
+    for (I64 x = min_x; x < max_x; x++) {
       float edge1 = EdgeFunction(p0, p1, { (float)x,(float)y });
       float edge2 = EdgeFunction(p1, p2, { (float)x,(float)y });
       float edge3 = EdgeFunction(p2, p0, { (float)x,(float)y });
@@ -102,7 +141,7 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
         float w1 = edge2 / area;
         float w2 = edge3 / area;
         float w3 = edge1 / area;
-#if 1
+#if PERSPECTIVE_CORRECT_INTERPOLATION
         float u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
         float v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
 
@@ -115,12 +154,12 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
 #endif
         u = u * (src->x - 2);
         v = v * (src->y - 2);
-        int ui = (int)(u);
-        int vi = (int)(v);
+        I64 ui = (I64)(u);
+        I64 vi = (I64)(v);
         float udiff = u - (float)ui;
         float vdiff = v - (float)vi;
-
-        uint32_t *pixel = src->pixels + (ui + (src->y - 1 - vi) * src->x);
+        U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
+#if BILINEAR_BLEND
         Vec4 pixelx1y1 = V4ABGR(*pixel);
         Vec4 pixelx2y1 = V4ABGR(*(pixel + 1));
         Vec4 pixelx1y2 = V4ABGR(*(pixel - src->x));
@@ -129,7 +168,10 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
         Vec4 blendx1 = Lerp(pixelx1y1, pixelx2y1, udiff);
         Vec4 blendx2 = Lerp(pixelx1y2, pixelx2y2, udiff);
         Vec4 result_color = Lerp(blendx1, blendx2, vdiff);
-        uint32_t color32 = ColorToU32ARGB(result_color);
+        U32 color32 = ColorToU32ABGR(result_color);
+#else
+        U32 color32 = *pixel;
+#endif
         
         dst->pixels[x + (dst->y - 1 - y) * dst->x] = color32;
       }
@@ -144,7 +186,7 @@ FUNCTION
 void DrawLine(Image *dst, float x0, float y0, float x1, float y1) {
   float delta_x = (x1 - x0);
   float delta_y = (y1 - y0);
-  float longest_side_length = (fabsf(delta_x) >= fabsf(delta_y)) ? fabsf(delta_x) : fabsf(delta_y);
+  float longest_side_length = (ABS(delta_x) >= ABS(delta_y)) ? ABS(delta_x) : ABS(delta_y);
   float x_inc = delta_x / (float)longest_side_length;
   float y_inc = delta_y / (float)longest_side_length;
   float current_x = (float)x0;
@@ -164,18 +206,20 @@ int main() {
   Vec3 camera_pos = {0,0,-5};
   int x,y,n;
   unsigned char *data = stbi_load("assets/bricksx64.png", &x, &y, &n, 4);
-  Image img = {(uint32_t *)data, x, y};
-  Mat4 perspective = Mat4Perspective(60.f, screen.x, screen.y, 0.1f, 100.f);
+  Image img = {(U32 *)data, x, y};
+  Image screen320 = {(U32 *)malloc(320*180*sizeof(U32)), 140, 140};
   while (OS_GameLoop()) {
-    for (int y = 0; y < screen.y; y++) {
-      for (int x = 0; x < screen.x; x++) {
-        screen.pixels[x + y * screen.x] = 0;
+    Mat4 perspective = Mat4Perspective(60.f, (float)screen.x, (float)screen.y, 0.1f, 100.f);
+    for (int y = 0; y < screen320.y; y++) {
+      for (int x = 0; x < screen320.x; x++) {
+        screen320.pixels[x + y * screen320.x] = 0;
       }
     }
 #if 0
-    DrawTriangle(&screen, &img, { 100,100 }, { 100,400 }, { 400,400 }, { 0,0 }, { 0,1 }, { 1,1 });
-    DrawTriangle(&screen, &img, { 100,100 }, { 400,400 }, { 400,100}, { 0,0 }, { 1,1 }, { 1,0 });
+    DrawTriangle(&screen320, &img, { 100,100 }, { 100,400 }, { 400,400 }, { 0,0 }, { 0,1 }, { 1,1 });
+    DrawTriangle(&screen320, &img, { 100,100 }, { 400,400 }, { 400,100}, { 0,0 }, { 1,1 }, { 1,0 });
 #else
+    //DrawBitmap(&screen320, &img, {0,0});
     Mat4 transform = Mat4RotationZ(rotation);
     transform = transform * Mat4RotationX(rotation);
     if (keydown_a) rotation += 0.05f;
@@ -207,15 +251,31 @@ int main() {
           pos[j].y = pos[j].y / pos[j].w;
           pos[j].z = pos[j].z / pos[j].w;
           //@Note: To pixel space
-          pos[j].x *= screen.x / 2;
-          pos[j].y *= screen.y / 2;
-          pos[j].x += screen.x / 2;
-          pos[j].y += screen.y / 2;
+          pos[j].x *= screen320.x / 2;
+          pos[j].y *= screen320.y / 2;
+          pos[j].x += screen320.x / 2;
+          pos[j].y += screen320.y / 2;
         }
-        DrawTriangle(&screen, &img, pos[0], pos[1], pos[2], face->tex[0], face->tex[1], face->tex[2]);
-        //DrawLine(&screen, pos[0].x, pos[0].y, pos[1].x, pos[1].y);
-        //DrawLine(&screen, pos[1].x, pos[1].y, pos[2].x, pos[2].y);
-        //DrawLine(&screen, pos[2].x, pos[2].y, pos[0].x, pos[0].y);
+        DrawTriangle(&screen320, &img, pos[0], pos[1], pos[2], face->tex[0], face->tex[1], face->tex[2]);
+#if DRAW_WIREFRAME
+        DrawLine(&screen320, pos[0].x, pos[0].y, pos[1].x, pos[1].y);
+        DrawLine(&screen320, pos[1].x, pos[1].y, pos[2].x, pos[2].y);
+        DrawLine(&screen320, pos[2].x, pos[2].y, pos[0].x, pos[0].y);
+#endif
+      }
+    }
+
+    U32* ptr = screen.pixels;
+    for (int y = 0; y < screen.y; y++) {
+      for (int x = 0; x < screen.x; x++) {
+        float u = (float)x / (float)screen.x;
+        float v = (float)y / (float)screen.y;
+        int tx = (int)(u * screen320.x + 0.5f);
+        int ty = (int)(v * screen320.y + 0.5f);
+        U32 pixel = screen320.pixels[tx + ty * (screen320.x)];
+        // 0xABGR to 0xARGB 
+        // b > 24 g > 8 r < 8
+        *ptr++ = ((pixel & 0xff000000)) | ((pixel & 0x00ff0000) >> 16) | ((pixel & 0x0000ff00)) | ((pixel & 0x000000ff) << 16);
       }
     }
 #endif

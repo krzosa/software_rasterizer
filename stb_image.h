@@ -644,7 +644,7 @@ typedef   signed int   stbi__int32;
 #include <stdint.h>
 typedef uint16_t stbi__uint16;
 typedef int16_t  stbi__int16;
-typedef uint32_t stbi__uint32;
+typedef U32 stbi__uint32;
 typedef int32_t  stbi__int32;
 #endif
 

@@ -1,9 +1,9 @@
 #include "main.h"
-#include <stdint.h>
+
 struct Image {
-  uint32_t* pixels;
-  int x;
-  int y;
+  U32* pixels;
+  I64 x;
+  I64 y;
 };
 
 struct OSInitArgs {

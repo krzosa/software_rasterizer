@@ -1,6 +1,8 @@
 #include "platform.h"
 #include <windows.h>
-#include <math.h>
+#include <shellscalingapi.h>
+
+typedef HRESULT tSetProcessDpiAwareness(PROCESS_DPI_AWARENESS);
 
 Image screen;
 float* depth_buffer;
@@ -15,8 +17,6 @@ GLOBAL HWND g_hwnd;
 GLOBAL HINSTANCE g_hinstance;
 GLOBAL int g_cmdshow;
 
-#include <shellscalingapi.h>
-typedef HRESULT tSetProcessDpiAwareness(PROCESS_DPI_AWARENESS);
 
 FUNCTION
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -59,7 +59,7 @@ void Win32_ScreenInit(int window_x, int window_y) {
   void* mem = 0;
   g_screen_dib = CreateDIBSection(g_window_dc, &bminfo, DIB_RGB_COLORS, (void**)&mem, 0, 0);
   g_screen_dc = CreateCompatibleDC(g_window_dc);
-  screen.pixels = (uint32_t*)mem;
+  screen.pixels = (U32*)mem;
   depth_buffer = (float*)malloc((size_t)window_x * (size_t)window_y * sizeof(float));
   screen.x = window_x;
   screen.y = window_y;
@@ -93,7 +93,11 @@ void OS_Init(OSInitArgs i) {
     g_hinstance,  // Instance handle
     NULL        // Additional application data
   );
-  ASSERT(g_hwnd != 0);
+  if (g_hwnd == 0) {
+    ASSERT(!"Failed to create window");
+    return;
+  }
+  
 
   ShowWindow(g_hwnd, SW_SHOW);
   RECT rect;
@@ -133,7 +137,7 @@ bool OS_GameLoop() {
 
   // @Note; Draw screen to window
   SelectObject(g_screen_dc, g_screen_dib);
-  BitBlt(g_window_dc, 0, 0, screen.x, screen.y, g_screen_dc, 0, 0, SRCCOPY);
+  BitBlt(g_window_dc, 0, 0, (int)screen.x, (int)screen.y, g_screen_dc, 0, 0, SRCCOPY);
   Sleep(16);
   return g_app_is_running;
 }
