@@ -12,9 +12,11 @@ struct OSInitArgs {
 };
 
 extern Image screen;
-extern float* depth_buffer;
 extern bool keydown_a;
 extern bool keydown_b;
+extern bool keydown_f1;
+extern bool keydown_f2;
+extern bool keydown_f3;
 
 bool OS_GameLoop();
 void OS_Init(OSInitArgs);

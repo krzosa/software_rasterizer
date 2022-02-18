@@ -11,9 +11,11 @@
 typedef HRESULT tSetProcessDpiAwareness(PROCESS_DPI_AWARENESS);
 
 Image screen;
-float* depth_buffer;
 bool keydown_a;
 bool keydown_b;
+bool keydown_f1;
+bool keydown_f2;
+bool keydown_f3;
 
 GLOBAL bool g_app_is_running = true;
 GLOBAL HBITMAP g_screen_dib;
@@ -36,6 +38,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case VK_ESCAPE: g_app_is_running = false; break;
     case 0x4F: keydown_a = true; break;
     case 0x50: keydown_b = true; break;
+    case VK_F1: keydown_f1 = true; break;
+    case VK_F2: keydown_f2 = true; break;
+    case VK_F3: keydown_f3 = true; break;
     }
   } break;
   case WM_SYSKEYUP:
@@ -43,6 +48,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     switch (wParam) {
     case 0x4F: keydown_a = false; break;
     case 0x50: keydown_b = false; break;
+    case VK_F1: keydown_f1 = false; break;
+    case VK_F2: keydown_f2 = false; break;
+    case VK_F3: keydown_f3 = false; break;
     }
   } break;
   default: result = DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -66,7 +74,6 @@ void Win32_ScreenInit(int window_x, int window_y) {
   g_screen_dib = CreateDIBSection(g_window_dc, &bminfo, DIB_RGB_COLORS, (void**)&mem, 0, 0);
   g_screen_dc = CreateCompatibleDC(g_window_dc);
   screen.pixels = (U32*)mem;
-  depth_buffer = (float*)malloc((size_t)window_x * (size_t)window_y * sizeof(float));
   screen.x = window_x;
   screen.y = window_y;
 }
@@ -129,7 +136,6 @@ bool OS_GameLoop() {
     screen.y = new_height;
     if (screen.pixels) {
       screen.pixels = 0;
-      free(depth_buffer);
       DeleteDC(g_screen_dc);
       DeleteObject(g_screen_dib);
     }
