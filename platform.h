@@ -18,3 +18,4 @@ extern bool keydown_b;
 
 bool OS_GameLoop();
 void OS_Init(OSInitArgs);
+char* OS_ReadFile(const char* path);

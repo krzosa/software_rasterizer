@@ -1,6 +1,12 @@
+/* 
+* The OS layer should expect ABGR writes to the screen, the bitmap is bottom up(origin 0,0 is in left bottom corner)
+*/
+
+#define _CRT_SECURE_NO_WARNINGS
 #include "platform.h"
 #include <windows.h>
 #include <shellscalingapi.h>
+
 
 typedef HRESULT tSetProcessDpiAwareness(PROCESS_DPI_AWARENESS);
 
@@ -49,7 +55,7 @@ void Win32_ScreenInit(int window_x, int window_y) {
   BITMAPINFO bminfo = {};
   bminfo.bmiHeader.biSize = sizeof(bminfo.bmiHeader);
   bminfo.bmiHeader.biWidth = window_x;
-  bminfo.bmiHeader.biHeight = -window_y;
+  bminfo.bmiHeader.biHeight = window_y;
   bminfo.bmiHeader.biPlanes = 1;
   bminfo.bmiHeader.biBitCount = 32;
   bminfo.bmiHeader.biCompression = BI_RGB; // AA RR GG BB
@@ -134,10 +140,21 @@ bool OS_GameLoop() {
     Win32_ScreenInit((LONG)screen.x, (LONG)screen.y);
   }
 
+  // @Note: Draw screen to window
+  U32* p = screen.pixels;
+  if (p != 0) {
+    // @Note: Convert 0xABGR to 0xARGB
+    for (int y = 0; y < screen.y; y++) {
+      for (int x = 0; x < screen.x; x++) {
+        *p = ((*p & 0xff000000)) | ((*p & 0x00ff0000) >> 16) | ((*p & 0x0000ff00)) | ((*p & 0x000000ff) << 16);
+        p += 1;
+      }
+    }
 
-  // @Note; Draw screen to window
-  SelectObject(g_screen_dc, g_screen_dib);
-  BitBlt(g_window_dc, 0, 0, (int)screen.x, (int)screen.y, g_screen_dc, 0, 0, SRCCOPY);
+    SelectObject(g_screen_dc, g_screen_dib);
+    BitBlt(g_window_dc, 0, 0, (int)screen.x, (int)screen.y, g_screen_dc, 0, 0, SRCCOPY);
+  }
+  
   Sleep(16);
   return g_app_is_running;
 }
@@ -147,4 +164,40 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
   g_hinstance = hInstance;
   g_cmdshow = nCmdShow;
   return main();
+}
+
+#include <stdio.h>
+void OS_Message(const char* format, ...) {
+  char buffer[1024];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, 1024, format, args);
+  va_end(args);
+
+  MessageBoxA(0, buffer, "Error!", 0);
+}
+
+char* OS_ReadFile(const char* path) {
+  char* result = 0;
+  FILE* f = fopen(path, "rb");
+  if (f) {
+    fseek(f, 0, SEEK_END);
+    U64 fsize = ftell(f);
+    fseek(f, 0, SEEK_SET); 
+
+    result = (char*)malloc(fsize + 1ll);
+    if (result) {
+      fread(result, fsize, 1, f);
+      result[fsize] = 0;
+    }
+    else {
+      ASSERT(!"Malloc failed!")
+    }
+    fclose(f);
+  }
+  else {
+    ASSERT(!"Failed to read file");
+  }
+  
+  return result;
 }

@@ -14,6 +14,7 @@ OK Fix the gaps between triangles (it also improved look of triangle edges)
 * Depth buffer 
 * FPS Camera
 * Reading OBJ files
+* Loading a model from PMX?
 * Rendering multiple objects, queue renderer
 * Clipping
 * Optimizations
@@ -22,14 +23,24 @@ OK Fix the gaps between triangles (it also improved look of triangle edges)
 *
 */
 
+/* What a codebase needs:
+* Macros for debug, release, slow, fast builds, where debug - tooling, slow - enable asserts
+* Macros for OS, Compiler, Architecture
+* Nice way of outputing visible error messages
+* FatalError and Assert function for release builds with an error message, Debug Assert with error message for slow builds
+* 
+*/
+#define OS_WINDOWS 1
 #define BILINEAR_BLEND 1
 #define PERSPECTIVE_CORRECT_INTERPOLATION 1
 #define DRAW_WIREFRAME 1
+#define DRAW_RECTS 0
 
 #include "main.h"
 #include "platform.h"
 #include "math.h"
 #include "stb_image.h"
+#include "objparser.h"
 
 struct Face { 
   int p[3]; 
@@ -71,15 +82,15 @@ void DrawRect(Image* dst, float X, float Y, float w, float h, U32 color) {
 
   for (int y = min_y; y < max_y; y++) {
     for (int x = min_x; x < max_x; x++) {
-      dst->pixels[x + (dst->y - 1 - y) * dst->x] = color;
+      dst->pixels[x + y * dst->x] = color;
     }
   }
 }
 
 FUNCTION
 void DrawBitmap(Image* dst, Image* src, Vec2 pos) {
-  I64 minx = (I64)(pos.x + 0.5f);
-  I64 miny = (I64)(pos.y + 0.5f);
+  I64 minx = (I64)(pos.x + 0.5);
+  I64 miny = (I64)(pos.y + 0.5);
   I64 maxx = minx + src->x;
   I64 maxy = miny + src->y;
   I64 offsetx = 0;
@@ -105,7 +116,7 @@ void DrawBitmap(Image* dst, Image* src, Vec2 pos) {
     for (I64 x = minx; x < maxx; x++) {
       I64 tx = x - minx + offsetx;
       I64 ty = y - miny + offsety;
-      dst->pixels[x + (dst->y - 1 - y) * dst->x] = src->pixels[tx + (src->y - 1 - ty) * src->x];
+      dst->pixels[x + y * dst->x] = src->pixels[tx + ty * src->x];
     }
   }
 }
@@ -127,8 +138,6 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
   I64 min_y = (I64)MAX(0, Floor(min_y1));
   I64 max_x = (I64)MIN(dst->x, Ceil(max_x1));
   I64 max_y = (I64)MIN(dst->y, Ceil(max_y1));
-  //@Todo: Fix the proper rounding 
-  //@Todo: Determine whether we need subprecision etc
 
   float area = EdgeFunction(p0, p1, p2);
   for (I64 y = min_y; y < max_y; y++) {
@@ -158,6 +167,7 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
         I64 vi = (I64)(v);
         float udiff = u - (float)ui;
         float vdiff = v - (float)vi;
+        // Origin UV (0,0) is in bottom left
         U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
 #if BILINEAR_BLEND
         Vec4 pixelx1y1 = V4ABGR(*pixel);
@@ -173,13 +183,15 @@ void DrawTriangle(Image* dst, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
         U32 color32 = *pixel;
 #endif
         
-        dst->pixels[x + (dst->y - 1 - y) * dst->x] = color32;
+        dst->pixels[x + y * dst->x] = color32;
       }
     }
   }
+#if DRAW_RECTS
   DrawRect(dst, p0.x-4, p0.y-4, 8,8, 0x00ff0000);
   DrawRect(dst, p1.x-4, p1.y-4, 8,8, 0x0000ff00);
   DrawRect(dst, p2.x-4, p2.y-4, 8,8, 0x000000ff);
+#endif
 }
 
 FUNCTION
@@ -194,20 +206,50 @@ void DrawLine(Image *dst, float x0, float y0, float x1, float y1) {
   for (int i = 0; i <= longest_side_length; i++) {
     int x = (int)(current_x + 0.5f);
     int y = (int)(current_y + 0.5f);
-    dst->pixels[x + (dst->y - 1 - y) * dst->x] = 0xffffffff;
+    dst->pixels[x + y * dst->x] = 0xffffffff;
     current_x += x_inc;
     current_y += y_inc;
   }
 }
 
+struct FaceA {
+  int vertex[3];
+  int tex[3];
+  int normal[3];
+};
+
+FUNCTION
+Obj LoadObj(const char* file) {
+  char* data = OS_ReadFile(file);
+  char* memory = (char*)malloc(100000);
+  Obj result = Obj_Parse(memory, 100000, data);
+  free(data);
+  return result;
+}
+
+FUNCTION
+Image LoadImage(const char* path) {
+  int x, y, n;
+  unsigned char* data = stbi_load(path, &x, &y, &n, 4);
+  Image result = { (U32*)data, x, y };
+  return result;
+}
+
 int main() {
+  Obj_Test();
   OS_Init({ 1280,720 });
   float rotation = 0;
   Vec3 camera_pos = {0,0,-5};
-  int x,y,n;
-  unsigned char *data = stbi_load("assets/bricksx64.png", &x, &y, &n, 4);
-  Image img = {(U32 *)data, x, y};
-  Image screen320 = {(U32 *)malloc(320*180*sizeof(U32)), 140, 140};
+  
+  Obj obj = LoadObj("assets/f22.obj");
+  Vec3* vertices = (Vec3 *)obj.vertices;
+  Vec2* tex_coords = (Vec2*)obj.texture;
+  FaceA* faces = (FaceA*)obj.indices;
+  I64 face_count = obj.indices_count;
+
+
+  Image img = LoadImage("assets/bricksx64.png");
+  Image screen320 = {(U32 *)malloc(320*180*sizeof(U32)), 320, 180};
   while (OS_GameLoop()) {
     Mat4 perspective = Mat4Perspective(60.f, (float)screen.x, (float)screen.y, 0.1f, 100.f);
     for (int y = 0; y < screen320.y; y++) {
@@ -215,21 +257,22 @@ int main() {
         screen320.pixels[x + y * screen320.x] = 0;
       }
     }
-#if 0
-    DrawTriangle(&screen320, &img, { 100,100 }, { 100,400 }, { 400,400 }, { 0,0 }, { 0,1 }, { 1,1 });
-    DrawTriangle(&screen320, &img, { 100,100 }, { 400,400 }, { 400,100}, { 0,0 }, { 1,1 }, { 1,0 });
-#else
-    //DrawBitmap(&screen320, &img, {0,0});
+    DrawBitmap(&screen320, &img, {0,0});
     Mat4 transform = Mat4RotationZ(rotation);
     transform = transform * Mat4RotationX(rotation);
     if (keydown_a) rotation += 0.05f;
     if (keydown_b) rotation -= 0.05f;
-    for (int i = 0; i < ARRAY_CAP(cube_faces); i++) {
-      Face* face = cube_faces + i;
+    for (int i = 0; i < face_count; i++) {
+      FaceA* face = faces + i;
       Vec4 pos[3] = {
-        vec4(cube_vertices[face->p[0] - 1], 1),
-        vec4(cube_vertices[face->p[1] - 1], 1),
-        vec4(cube_vertices[face->p[2] - 1], 1),
+        vec4(vertices[face->vertex[0] - 1], 1),
+        vec4(vertices[face->vertex[1] - 1], 1),
+        vec4(vertices[face->vertex[2] - 1], 1),
+      };
+      Vec2 tex[3] = {
+        tex_coords[face->tex[0] - 1],
+        tex_coords[face->tex[1] - 1],
+        tex_coords[face->tex[2] - 1],
       };
 
       //@Note: Transform
@@ -256,7 +299,8 @@ int main() {
           pos[j].x += screen320.x / 2;
           pos[j].y += screen320.y / 2;
         }
-        DrawTriangle(&screen320, &img, pos[0], pos[1], pos[2], face->tex[0], face->tex[1], face->tex[2]);
+
+        DrawTriangle(&screen320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
 #if DRAW_WIREFRAME
         DrawLine(&screen320, pos[0].x, pos[0].y, pos[1].x, pos[1].y);
         DrawLine(&screen320, pos[1].x, pos[1].y, pos[2].x, pos[2].y);
@@ -265,6 +309,7 @@ int main() {
       }
     }
 
+    // @Note: Draw 320screen to OS screen
     U32* ptr = screen.pixels;
     for (int y = 0; y < screen.y; y++) {
       for (int x = 0; x < screen.x; x++) {
@@ -272,12 +317,8 @@ int main() {
         float v = (float)y / (float)screen.y;
         int tx = (int)(u * screen320.x + 0.5f);
         int ty = (int)(v * screen320.y + 0.5f);
-        U32 pixel = screen320.pixels[tx + ty * (screen320.x)];
-        // 0xABGR to 0xARGB 
-        // b > 24 g > 8 r < 8
-        *ptr++ = ((pixel & 0xff000000)) | ((pixel & 0x00ff0000) >> 16) | ((pixel & 0x0000ff00)) | ((pixel & 0x000000ff) << 16);
+        *ptr++ = screen320.pixels[tx + ty * (screen320.x)];
       }
     }
-#endif
   }
 }
