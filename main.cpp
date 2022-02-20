@@ -39,8 +39,10 @@ OK Reading OBJ files
 * 
 */
 #define OS_WINDOWS 1
-#define BILINEAR_BLEND 1
 #define PERSPECTIVE_CORRECT_INTERPOLATION 1
+#define BILINEAR_BLEND 1
+  #define GAMMA_CORRECT_BLENDING 1
+  #define PREMULTIPLIED_ALPHA_BLENDING 1
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "main.h"
@@ -53,7 +55,6 @@ OK Reading OBJ files
 GLOBAL OS os = {};
 GLOBAL bool draw_rects = 0;
 GLOBAL bool draw_wireframe = 0;
-#include "rasterization_feature_selection.cpp"
 
 struct Face { 
   int p[3]; 
@@ -123,7 +124,6 @@ void draw_bitmap(Image* dst, Image* src, Vec2 pos) {
     offsety = -miny;
     miny = 0;
   }
-
 
   for (I64 y = miny; y < maxy; y++) {
     for (I64 x = minx; x < maxx; x++) {
@@ -198,26 +198,43 @@ void draw_triangle(Image* dst, float *depth_buffer, Image *src,
           float udiff = u - (float)ui;
           float vdiff = v - (float)vi;
           // Origin UV (0,0) is in bottom left
-          U32* pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
+          U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
+          U32 *dst_pixel = dst->pixels + (x + y * dst->x);
 
 #if BILINEAR_BLEND
-          Vec4 pixelx1y1 = srgb_to_almost_linear(v4abgr(*pixel));
-          Vec4 pixelx2y1 = srgb_to_almost_linear(v4abgr(*(pixel + 1)));
-          Vec4 pixelx1y2 = srgb_to_almost_linear(v4abgr(*(pixel - src->x)));
-          Vec4 pixelx2y2 = srgb_to_almost_linear(v4abgr(*(pixel + 1 - src->x)));
-
-
+          Vec4 pixelx1y1 = vec4abgr(*pixel);
+          Vec4 pixelx2y1 = vec4abgr(*(pixel + 1));
+          Vec4 pixelx1y2 = vec4abgr(*(pixel - src->x));
+          Vec4 pixelx2y2 = vec4abgr(*(pixel + 1 - src->x));
+  #if GAMMA_CORRECT_BLENDING
+          pixelx1y1 = srgb_to_almost_linear(pixelx1y1);
+          pixelx2y1 = srgb_to_almost_linear(pixelx2y1);
+          pixelx1y2 = srgb_to_almost_linear(pixelx1y2);
+          pixelx2y2 = srgb_to_almost_linear(pixelx2y2);
+  #endif // GAMMA_CORRECT_BLENDING
           Vec4 blendx1 = lerp(pixelx1y1, pixelx2y1, udiff);
           Vec4 blendx2 = lerp(pixelx1y2, pixelx2y2, udiff);
           Vec4 result_color = lerp(blendx1, blendx2, vdiff);
+  #if PREMULTIPLIED_ALPHA_BLENDING
+          Vec4 dst_color = vec4abgr(*dst_pixel);
+    #if GAMMA_CORRECT_BLENDING
+          dst_color = srgb_to_almost_linear(dst_color);
+    #endif
+          result_color.r = result_color.r + (1-result_color.a) * dst_color.r;
+          result_color.g = result_color.g + (1-result_color.a) * dst_color.g;
+          result_color.b = result_color.b + (1-result_color.a) * dst_color.b;
+          result_color.a = result_color.a + dst_color.a - result_color.a*dst_color.a;
+  #endif // PREMULTIPLIED_ALPHA_BLENDING
+  #if GAMMA_CORRECT_BLENDING
           result_color = almost_linear_to_srgb(result_color);
           ASSERT(result_color.r <= 1 && result_color.g <= 1 && result_color.b <= 1);
+  #endif // GAMMA_CORRECT_BLENDING
           U32 color32 = color_to_u32abgr(result_color);
-#else
+#else // BILINEAR_BLEND
           U32 color32 = *pixel;
-#endif
+#endif // BILINEAR_BLEND
 
-          dst->pixels[x + y * dst->x] = color32;
+          *dst_pixel = color32;
         }
       }
     }
@@ -228,7 +245,6 @@ void draw_triangle(Image* dst, float *depth_buffer, Image *src,
     draw_rect(dst, p2.x-4, p2.y-4, 8,8, 0x000000ff);
   }
 }
-#include "raster_functions.cpp"
 
 FUNCTION
 void draw_line(Image *dst, float x0, float y0, float x1, float y1) {
@@ -268,13 +284,24 @@ Image load_image(const char* path) {
   int x, y, n;
   unsigned char* data = stbi_load(path, &x, &y, &n, 4);
   Image result = { (U32*)data, x, y };
+#if PREMULTIPLIED_ALPHA_BLENDING
+  U32 *p = result.pixels;
+  for (int Y = 0; Y < y; Y++) {
+    for (int X = 0; X < x; X++) {
+      Vec4 color = vec4abgr(*p);
+      color.r *= color.a;
+      color.g *= color.a;
+      color.b *= color.a;
+      *p++ = color_to_u32abgr(color);
+    }
+  }
+#endif
   return result;
 }
 
 int main() {
   obj::test();
   os.init({ 1280,720 });
-  generate_stuff();
 
   float rotation = 0;
   Vec3 camera_pos = {0,0,-5};
@@ -287,14 +314,16 @@ int main() {
 
 
   Image img = load_image("assets/bricksx64.png");
-  Image screen320 = {(U32 *)malloc(320*180*sizeof(U32)), 320, 180};
-  float* depth320 = (float *)malloc(sizeof(float) * 320 * 180);
+  int screen_x = 320;
+  int screen_y = 60;
+  Image screen320 = {(U32 *)malloc(screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
+  float* depth320 = (float *)malloc(sizeof(float) * screen_x * screen_y);
   while (os.game_loop()) {
     Mat4 perspective = make_matrix_perspective(60.f, (float)os.screen.x, (float)os.screen.y, 0.1f, 100.f);
     U32* p = screen320.pixels;
     for (int y = 0; y < screen320.y; y++) {
       for (int x = 0; x < screen320.x; x++) {
-        *p++ = 0;
+        *p++ = 0x44444444;
       }
     }
     float* dp = depth320;
@@ -303,7 +332,7 @@ int main() {
         *dp++ = -FLT_MAX;
       }
     }
-    draw_bitmap(&screen320, &img, {0,0});
+//draw_bitmap(&screen320, &img, {0,0});
     Mat4 transform = make_matrix_rotation_z(rotation);
     transform = transform * make_matrix_rotation_x(rotation);
     if (os.keydown_a) rotation += 0.05f;
@@ -344,18 +373,16 @@ int main() {
           //@Note: To pixel space
           pos[j].x *= screen320.x / 2;
           pos[j].y *= screen320.y / 2;
-          //pos[j].x += screen320.x / 2;
-          //pos[j].y += screen320.y / 2;
-          pos[j].x += screen320.x / 4;
-          pos[j].y += screen320.y / 4;
+          pos[j].x += screen320.x / 2;
+          pos[j].y += screen320.y / 2;
         }
 
-        draw_triangle_PERSPECTIVE_CORRECT_INTERPOLATION_on_BILINEAR_BLEND_off(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
+        draw_triangle(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
         for (int j = 0; j < 3; j++) {
-          pos[j].x += screen320.x / 3;
-          pos[j].y += screen320.y / 3;
+          pos[j].x += screen320.x / 8;
+          pos[j].y += screen320.y / 8;
         }
-        draw_triangle_PERSPECTIVE_CORRECT_INTERPOLATION_on_BILINEAR_BLEND_on(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
+        draw_triangle(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
         if (draw_wireframe) {
           draw_line(&screen320, pos[0].x, pos[0].y, pos[1].x, pos[1].y);
           draw_line(&screen320, pos[1].x, pos[1].y, pos[2].x, pos[2].y);

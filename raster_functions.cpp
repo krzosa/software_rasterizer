@@ -101,11 +101,16 @@ FUNCTION void draw_triangle_PERSPECTIVE_CORRECT_INTERPOLATION_on_BILINEAR_BLEND_
           U32* pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
 
 // BILINEAR_BLEND 
-          Vec4 pixelx1y1 = srgb_to_almost_linear(v4abgr(*pixel));
-          Vec4 pixelx2y1 = srgb_to_almost_linear(v4abgr(*(pixel + 1)));
-          Vec4 pixelx1y2 = srgb_to_almost_linear(v4abgr(*(pixel - src->x)));
-          Vec4 pixelx2y2 = srgb_to_almost_linear(v4abgr(*(pixel + 1 - src->x)));
+          Vec4 pixelx1y1 = v4abgr(*pixel);
+          if (pixelx1y1.a < 0.2) continue;
+          Vec4 pixelx2y1 = v4abgr(*(pixel + 1));
+          Vec4 pixelx1y2 = v4abgr(*(pixel - src->x));
+          Vec4 pixelx2y2 = v4abgr(*(pixel + 1 - src->x));
 
+          pixelx1y1 = srgb_to_almost_linear(pixelx1y1);
+          pixelx2y1 = srgb_to_almost_linear(pixelx2y1);
+          pixelx1y2 = srgb_to_almost_linear(pixelx1y2);
+          pixelx2y2 = srgb_to_almost_linear(pixelx2y2);
 
           Vec4 blendx1 = lerp(pixelx1y1, pixelx2y1, udiff);
           Vec4 blendx2 = lerp(pixelx1y2, pixelx2y2, udiff);
@@ -169,11 +174,16 @@ FUNCTION void draw_triangle_PERSPECTIVE_CORRECT_INTERPOLATION_off_BILINEAR_BLEND
           U32* pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
 
 // BILINEAR_BLEND 
-          Vec4 pixelx1y1 = srgb_to_almost_linear(v4abgr(*pixel));
-          Vec4 pixelx2y1 = srgb_to_almost_linear(v4abgr(*(pixel + 1)));
-          Vec4 pixelx1y2 = srgb_to_almost_linear(v4abgr(*(pixel - src->x)));
-          Vec4 pixelx2y2 = srgb_to_almost_linear(v4abgr(*(pixel + 1 - src->x)));
+          Vec4 pixelx1y1 = v4abgr(*pixel);
+          if (pixelx1y1.a < 0.2) continue;
+          Vec4 pixelx2y1 = v4abgr(*(pixel + 1));
+          Vec4 pixelx1y2 = v4abgr(*(pixel - src->x));
+          Vec4 pixelx2y2 = v4abgr(*(pixel + 1 - src->x));
 
+          pixelx1y1 = srgb_to_almost_linear(pixelx1y1);
+          pixelx2y1 = srgb_to_almost_linear(pixelx2y1);
+          pixelx1y2 = srgb_to_almost_linear(pixelx1y2);
+          pixelx2y2 = srgb_to_almost_linear(pixelx2y2);
 
           Vec4 blendx1 = lerp(pixelx1y1, pixelx2y1, udiff);
           Vec4 blendx2 = lerp(pixelx1y2, pixelx2y2, udiff);

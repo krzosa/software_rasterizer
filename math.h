@@ -290,7 +290,7 @@ Vec4 v4argb(U32 c) {
 }
 
 FUNCTION
-Vec4 v4abgr(U32 c) {
+Vec4 vec4abgr(U32 c) {
   float a = ((c & 0xff000000) >> 24) / 255.f;
   float b = ((c & 0x00ff0000) >> 16) / 255.f;
   float g = ((c & 0x0000ff00) >> 8) / 255.f;
@@ -301,7 +301,7 @@ Vec4 v4abgr(U32 c) {
 
 FUNCTION
 float lerp(float a, float b, float t) {
-  float result = (1.0f - t) * a + t * b;
+  float result = a + (b-a)*t; //(1.0f - t) * a + t * b;
   return result;
 }
 
