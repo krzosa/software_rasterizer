@@ -231,7 +231,14 @@ void draw_triangle(Image* dst, float *depth_buffer, Image *src,
   #endif // GAMMA_CORRECT_BLENDING
           U32 color32 = color_to_u32abgr(result_color);
 #else // BILINEAR_BLEND
-          U32 color32 = *pixel;
+          Vec4 result_color = srgb_to_almost_linear(vec4abgr(*pixel));
+          Vec4 dst_color = srgb_to_almost_linear(vec4abgr(*dst_pixel));
+          result_color.r = result_color.r + (1-result_color.a) * dst_color.r;
+          result_color.g = result_color.g + (1-result_color.a) * dst_color.g;
+          result_color.b = result_color.b + (1-result_color.a) * dst_color.b;
+          result_color.a = result_color.a + dst_color.a - result_color.a*dst_color.a;
+          result_color = almost_linear_to_srgb(result_color);
+          U32 color32 = color_to_u32abgr(result_color);
 #endif // BILINEAR_BLEND
 
           *dst_pixel = color32;
@@ -306,16 +313,16 @@ int main() {
   float rotation = 0;
   Vec3 camera_pos = {0,0,-5};
   
-  Obj obj = load_obj("assets/f22.obj");
+  Obj obj = load_obj("assets/cube.obj");
   Vec3* vertices = (Vec3 *)obj.vertices;
   Vec2* tex_coords = (Vec2*)obj.texture;
   FaceA* faces = (FaceA*)obj.indices;
   I64 face_count = obj.indices_count;
 
 
-  Image img = load_image("assets/bricksx64.png");
-  int screen_x = 320;
-  int screen_y = 60;
+  Image img = load_image("assets/cat.png");
+  int screen_x = 160;
+  int screen_y = 90;
   Image screen320 = {(U32 *)malloc(screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   float* depth320 = (float *)malloc(sizeof(float) * screen_x * screen_y);
   while (os.game_loop()) {
