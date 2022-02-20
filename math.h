@@ -29,6 +29,12 @@ Vec4 vec4(Vec3 a, float b) {
 }
 
 FUNCTION
+Vec3 vec3(float x, float y, float z) {
+  Vec3 result = { x,y,z };
+  return result;
+}
+
+FUNCTION
 Mat4 make_matrix_identity() {
   Mat4 result = {
     1,0,0,0,
@@ -256,6 +262,19 @@ Vec3 cross(Vec3 a, Vec3 b) {
     a.z * b.x - a.x * b.z,
     a.x * b.y - a.y * b.x,
   };
+  return result;
+}
+
+FUNCTION
+float length(Vec3 a) {
+  float result = sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
+  return result;
+}
+
+FUNCTION
+Vec3 normalize(Vec3 a) {
+  float len = length(a);
+  Vec3 result = {a.x/len, a.y/len, a.z/len};
   return result;
 }
 

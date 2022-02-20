@@ -13,8 +13,8 @@ OK Fix the gaps between triangles (it also improved look of triangle edges)
 OK Perspective correct interpolation
 OK Depth buffer 
 KINDA_OK Gamma correct blending
-* Alpha blending??
-* Premultiplied alpha???
+OK Alpha blending??
+OK Premultiplied alpha???
 * Lightning
 * LookAt Camera
 * FPS Camera
@@ -61,32 +61,6 @@ struct Face {
   Vec2 tex[3];
 };
 
-GLOBAL Vec3 cube_vertices[] = {
-  {-1, -1,-1},
-  {-1, 1, -1},
-  {1, 1,  -1},
-  {1, -1, -1},
-  {1, 1,  1},
-  {1, -1, 1},
-  {-1, 1, 1},
-  {-1, -1,1},
-};
-
-GLOBAL Face cube_faces[] = {
-  {{1, 2, 3}, {{ 0, 0 }, { 0, 1 }, { 1, 1 }}, },
-  {{1, 3, 4}, {{ 0, 0 }, { 1, 1 }, { 1, 0 }}, },
-  {{4, 3, 5}, {{ 0, 0 }, { 0, 1 }, { 1, 1 }}, },
-  {{4, 5, 6}, {{ 0, 0 }, { 1, 1 }, { 1, 0 }}, },
-  {{6, 5, 7}, {{ 0, 0 }, { 0, 1 }, { 1, 1 }}, },
-  {{6, 7, 8}, {{ 0, 0 }, { 1, 1 }, { 1, 0 }}, },
-  {{8, 7, 2}, {{ 0, 0 }, { 0, 1 }, { 1, 1 }}, },
-  {{8, 2, 1}, {{ 0, 0 }, { 1, 1 }, { 1, 0 }}, },
-  {{2, 7, 5}, {{ 0, 0 }, { 0, 1 }, { 1, 1 }}, },
-  {{2, 5, 3}, {{ 0, 0 }, { 1, 1 }, { 1, 0 }}, },
-  {{6, 8, 1}, {{ 0, 0 }, { 0, 1 }, { 1, 1 }}, }, 
-  {{6, 1, 4}, {{ 0, 0 }, { 1, 1 }, { 1, 0 }}, }
-};
-
 FUNCTION
 void draw_rect(Image* dst, float X, float Y, float w, float h, U32 color) {
   int max_x = (int)(MIN(X + w, dst->x) + 0.5f);
@@ -102,7 +76,25 @@ void draw_rect(Image* dst, float X, float Y, float w, float h, U32 color) {
 }
 
 FUNCTION
-void draw_bitmap(Image* dst, Image* src, Vec2 pos) {
+float edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
+  float result = (vecp1.y - vecp0.y) * (p.x - vecp0.x) - (vecp1.x - vecp0.x) * (p.y - vecp0.y);
+  return result;
+}
+
+FUNCTION
+Vec4 srgb_to_almost_linear(Vec4 a) {
+  Vec4 result = {a.r*a.r, a.g*a.g, a.b*a.b, a.a};
+  return result; // @Note: Linear would be to power of 2.2
+}
+
+FUNCTION
+Vec4 almost_linear_to_srgb(Vec4 a) {
+  Vec4 result = { sqrt(a.r), sqrt(a.g), sqrt(a.b), a.a };
+  return result;
+}
+
+FUNCTION
+  void draw_bitmap(Image* dst, Image* src, Vec2 pos) {
   I64 minx = (I64)(pos.x + 0.5);
   I64 miny = (I64)(pos.y + 0.5);
   I64 maxx = minx + src->x;
@@ -129,31 +121,23 @@ void draw_bitmap(Image* dst, Image* src, Vec2 pos) {
     for (I64 x = minx; x < maxx; x++) {
       I64 tx = x - minx + offsetx;
       I64 ty = y - miny + offsety;
-      dst->pixels[x + y * dst->x] = src->pixels[tx + ty * src->x];
+      U32 *dst_pixel = dst->pixels + (x + y * dst->x); 
+      U32 *pixel     = src->pixels + (tx + ty * src->x); 
+      Vec4 result_color = srgb_to_almost_linear(vec4abgr(*pixel));
+      Vec4 dst_color = srgb_to_almost_linear(vec4abgr(*dst_pixel));
+      result_color.r = result_color.r + (1-result_color.a) * dst_color.r;
+      result_color.g = result_color.g + (1-result_color.a) * dst_color.g;
+      result_color.b = result_color.b + (1-result_color.a) * dst_color.b;
+      result_color.a = result_color.a + dst_color.a - result_color.a*dst_color.a;
+      result_color = almost_linear_to_srgb(result_color);
+      U32 color32 = color_to_u32abgr(result_color);
+      *dst_pixel = color32;
     }
   }
 }
 
-FUNCTION
-float edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
-  float result = (vecp1.y - vecp0.y) * (p.x - vecp0.x) - (vecp1.x - vecp0.x) * (p.y - vecp0.y);
-  return result;
-}
-
-FUNCTION
-Vec4 srgb_to_almost_linear(Vec4 a) {
-  Vec4 result = {a.r*a.r, a.g*a.g, a.b*a.b, a.a};
-  return result; // @Note: Linear would be to power of 2.2
-}
-
-FUNCTION
-Vec4 almost_linear_to_srgb(Vec4 a) {
-  Vec4 result = { sqrt(a.r), sqrt(a.g), sqrt(a.b), a.a };
-  return result;
-}
-
 FUNCTION 
-void draw_triangle(Image* dst, float *depth_buffer, Image *src, 
+void draw_triangle(Image* dst, float *depth_buffer, Image *src, float light,
                   Vec4 p0,   Vec4 p1,   Vec4 p2,
                   Vec2 tex0, Vec2 tex1, Vec2 tex2) {
   float min_x1 = (float)(MIN(p0.x, MIN(p1.x, p2.x)));
@@ -215,6 +199,9 @@ void draw_triangle(Image* dst, float *depth_buffer, Image *src,
           Vec4 blendx1 = lerp(pixelx1y1, pixelx2y1, udiff);
           Vec4 blendx2 = lerp(pixelx1y2, pixelx2y2, udiff);
           Vec4 result_color = lerp(blendx1, blendx2, vdiff);
+          result_color.r *= light;
+          result_color.g *= light;
+          result_color.b *= light;
   #if PREMULTIPLIED_ALPHA_BLENDING
           Vec4 dst_color = vec4abgr(*dst_pixel);
     #if GAMMA_CORRECT_BLENDING
@@ -227,7 +214,7 @@ void draw_triangle(Image* dst, float *depth_buffer, Image *src,
   #endif // PREMULTIPLIED_ALPHA_BLENDING
   #if GAMMA_CORRECT_BLENDING
           result_color = almost_linear_to_srgb(result_color);
-          ASSERT(result_color.r <= 1 && result_color.g <= 1 && result_color.b <= 1);
+          //ASSERT(result_color.r <= 1 && result_color.g <= 1 && result_color.b <= 1);
   #endif // GAMMA_CORRECT_BLENDING
           U32 color32 = color_to_u32abgr(result_color);
 #else // BILINEAR_BLEND
@@ -313,16 +300,16 @@ int main() {
   float rotation = 0;
   Vec3 camera_pos = {0,0,-5};
   
-  Obj obj = load_obj("assets/cube.obj");
+  Obj obj = load_obj("assets/f22.obj");
   Vec3* vertices = (Vec3 *)obj.vertices;
   Vec2* tex_coords = (Vec2*)obj.texture;
   FaceA* faces = (FaceA*)obj.indices;
   I64 face_count = obj.indices_count;
 
 
-  Image img = load_image("assets/cat.png");
-  int screen_x = 160;
-  int screen_y = 90;
+  Image img = load_image("assets/bricksx64.png");
+  int screen_x = 320;
+  int screen_y = 180;
   Image screen320 = {(U32 *)malloc(screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   float* depth320 = (float *)malloc(sizeof(float) * screen_x * screen_y);
   while (os.game_loop()) {
@@ -330,7 +317,7 @@ int main() {
     U32* p = screen320.pixels;
     for (int y = 0; y < screen320.y; y++) {
       for (int x = 0; x < screen320.x; x++) {
-        *p++ = 0x44444444;
+        *p++ = 0x33333333;
       }
     }
     float* dp = depth320;
@@ -339,7 +326,7 @@ int main() {
         *dp++ = -FLT_MAX;
       }
     }
-//draw_bitmap(&screen320, &img, {0,0});
+
     Mat4 transform = make_matrix_rotation_z(rotation);
     transform = transform * make_matrix_rotation_x(rotation);
     if (os.keydown_a) rotation += 0.05f;
@@ -367,7 +354,9 @@ int main() {
       Vec3 p0_to_camera = camera_pos - pos[0].xyz;
       Vec3 p0_to_p1 = pos[1].xyz - pos[0].xyz;
       Vec3 p0_to_p2 = pos[2].xyz - pos[0].xyz;
-      Vec3 normal = cross(p0_to_p1, p0_to_p2);
+      Vec3 normal = normalize(cross(p0_to_p1, p0_to_p2));
+      float light = -dot(normal, vec3(0,1,0));
+      light = CLAMP(0.05, light, 1);
       if (dot(normal, p0_to_camera) > 0) {
         for (int j = 0; j < 3; j++) {
           //@Note: Camera
@@ -383,13 +372,13 @@ int main() {
           pos[j].x += screen320.x / 2;
           pos[j].y += screen320.y / 2;
         }
-
-        draw_triangle(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
+      
+        draw_triangle(&screen320, depth320, &img, light, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
         for (int j = 0; j < 3; j++) {
           pos[j].x += screen320.x / 8;
           pos[j].y += screen320.y / 8;
         }
-        draw_triangle(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
+        draw_triangle(&screen320, depth320, &img, light, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
         if (draw_wireframe) {
           draw_line(&screen320, pos[0].x, pos[0].y, pos[1].x, pos[1].y);
           draw_line(&screen320, pos[1].x, pos[1].y, pos[2].x, pos[2].y);

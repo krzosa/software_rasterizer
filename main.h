@@ -5,6 +5,7 @@
 #define GLOBAL   static
 #define MIN(x,y) ((x)>(y)?(y):(x))
 #define MAX(x,y) ((x)>(y)?(x):(y))
+#define CLAMP(min,x,max) MAX(min,MIN(max, x))
 #define ABS(x) ((x)<0?-(x):(x))
 #include <stdint.h>
 typedef int64_t  I64;
