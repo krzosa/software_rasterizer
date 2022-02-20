@@ -10,5 +10,7 @@ struct Obj {
   size_t memory_taken;
 };
 
-Obj  Obj_Parse(char* memory, size_t memory_size, char* data);
-void Obj_Test();
+namespace obj {
+  Obj  parse(char* memory, size_t memory_size, char* data);
+  void test();
+}

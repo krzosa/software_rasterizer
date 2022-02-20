@@ -1,6 +1,8 @@
 #include "main.h"
 #include <intrin.h>
 
+constexpr float PI32 = 3.14159265359f;
+
 struct Mat4 {
   float p[4][4];
 };
@@ -20,8 +22,6 @@ union Vec4 {
   struct { Vec3 xyz; };
 };
 
-constexpr float PI32 = 3.14159265359f;
-
 FUNCTION
 Vec4 vec4(Vec3 a, float b) {
   Vec4 result = { a.x,a.y,a.z,b };
@@ -29,7 +29,7 @@ Vec4 vec4(Vec3 a, float b) {
 }
 
 FUNCTION
-Mat4 Mat4Identity() {
+Mat4 make_matrix_identity() {
   Mat4 result = {
     1,0,0,0,
     0,1,0,0,
@@ -40,7 +40,7 @@ Mat4 Mat4Identity() {
 }
 
 FUNCTION
-float Sin(float value) {
+float sin(float value) {
   __m128 result128 = _mm_set_ps1(value);
   result128 = _mm_sin_ps(result128);
   float result = *(float *)&result128;
@@ -48,7 +48,7 @@ float Sin(float value) {
 }
 
 FUNCTION
-float Cos(float value) {
+float cos(float value) {
   __m128 result128 = _mm_set_ps1(value);
   result128 = _mm_cos_ps(result128);
   float result = *(float*)&result128;
@@ -56,7 +56,7 @@ float Cos(float value) {
 }
 
 FUNCTION
-float Tan(float value) {
+float tan(float value) {
   __m128 result128 = _mm_set_ps1(value);
   result128 = _mm_tan_ps(result128);
   float result = *(float*)&result128;
@@ -64,7 +64,7 @@ float Tan(float value) {
 }
 
 FUNCTION
-float Floor(float value) {
+float floor(float value) {
   __m128 result128 = _mm_set_ps1(value);
   result128 = _mm_floor_ps(result128);
   float result = *(float*)&result128;
@@ -72,7 +72,7 @@ float Floor(float value) {
 }
 
 FUNCTION
-float Ceil(float value) {
+float ceil(float value) {
   __m128 result128 = _mm_set_ps1(value);
   result128 = _mm_ceil_ps(result128);
   float result = *(float*)&result128;
@@ -80,7 +80,7 @@ float Ceil(float value) {
 }
 
 FUNCTION
-float Round(float value) {
+float round(float value) {
   __m128 result128 = _mm_set_ps1(value);
   result128 = _mm_round_ps(result128, _MM_FROUND_TO_NEAREST_INT| _MM_FROUND_NO_EXC);
   float result = *(float*)&result128;
@@ -88,9 +88,17 @@ float Round(float value) {
 }
 
 FUNCTION
-Mat4 Mat4RotationZ(float rotation) {
-  float s = Sin(rotation);
-  float c = Cos(rotation);
+float sqrt(float value) {
+  __m128 result128 = _mm_set_ps1(value);
+  result128 = _mm_sqrt_ps(result128);
+  float result = *(float*)&result128;
+  return result;
+}
+
+FUNCTION
+Mat4 make_matrix_rotation_x(float rotation) {
+  float s = sin(rotation);
+  float c = cos(rotation);
   Mat4 result = {
     c, s, 0, 0,
     -s,  c, 0, 0,
@@ -101,9 +109,9 @@ Mat4 Mat4RotationZ(float rotation) {
 }
 
 FUNCTION
-Mat4 Mat4RotationY(float rotation) {
-  float s = Sin(rotation);
-  float c = Cos(rotation);
+Mat4 make_matrix_rotation_y(float rotation) {
+  float s = sin(rotation);
+  float c = cos(rotation);
   Mat4 result = {
     c, 0, -s, 0,
     0, 1,  0, 0,
@@ -114,9 +122,9 @@ Mat4 Mat4RotationY(float rotation) {
 }
 
 FUNCTION
-Mat4 Mat4RotationX(float rotation) {
-  float s = Sin(rotation);
-  float c = Cos(rotation);
+Mat4 make_matrix_rotation_z(float rotation) {
+  float s = sin(rotation);
+  float c = cos(rotation);
   Mat4 result = {
     1,  0, 0, 0,
     0,  c, s, 0,
@@ -127,9 +135,9 @@ Mat4 Mat4RotationX(float rotation) {
 }
 
 FUNCTION
-Mat4 Mat4Perspective(float fov, float window_x, float window_y, float znear, float zfar) {
+Mat4 make_matrix_perspective(float fov, float window_x, float window_y, float znear, float zfar) {
   float aspect_ratio = window_y / window_x;
-  float f = (1.f / Tan((fov/2.f)*(180.f/PI32)));
+  float f = (1.f / tan((fov/2.f)*(180.f/PI32)));
   Mat4 result = {
     aspect_ratio*f, 0, 0, 0,
     0, f, 0, 0,
@@ -140,7 +148,19 @@ Mat4 Mat4Perspective(float fov, float window_x, float window_y, float znear, flo
 }
 
 FUNCTION
-Mat4 Mat4Translate(Mat4 a, Vec3 translation) {
+Mat4 transpose(Mat4 a) {
+  Mat4 result = a;
+  result.p[0][1] = result.p[1][0];
+  result.p[0][2] = result.p[2][0];
+  result.p[0][3] = result.p[3][0];
+  result.p[2][1] = result.p[1][2];
+  result.p[3][1] = result.p[1][3];
+  result.p[3][2] = result.p[2][3];
+  return result;
+}
+
+FUNCTION
+Mat4 translate(Mat4 a, Vec3 translation) {
   a.p[0][0] += translation.x;
   a.p[0][1] += translation.y;
   a.p[0][2] += translation.z;
@@ -189,7 +209,6 @@ Vec3 operator+(Vec3 a, Vec3 b) {
   return result;
 }
 
-
 FUNCTION
 Vec4 operator*(Mat4 a, Vec4 b) {
   Vec4 result = {
@@ -225,13 +244,13 @@ Mat4 operator*(Mat4 a, Mat4 b) {
 }
 
 FUNCTION
-float Dot(Vec3 a, Vec3 b) {
+float dot(Vec3 a, Vec3 b) {
   float result = a.x * b.x + a.y * b.y + a.z * b.z;
   return result;
 }
 
 FUNCTION
-Vec3 Cross(Vec3 a, Vec3 b) {
+Vec3 cross(Vec3 a, Vec3 b) {
   Vec3 result = {
     a.y * b.z - a.z * b.y,
     a.z * b.x - a.x * b.z,
@@ -241,7 +260,7 @@ Vec3 Cross(Vec3 a, Vec3 b) {
 }
 
 FUNCTION
-U32 ColorToU32ARGB(Vec4 a) {
+U32 color_to_u32argb(Vec4 a) {
   uint8_t r8 = (uint8_t)(a.r * 255.f);
   uint8_t g8 = (uint8_t)(a.g * 255.f);
   uint8_t b8 = (uint8_t)(a.b * 255.f);
@@ -251,7 +270,7 @@ U32 ColorToU32ARGB(Vec4 a) {
 }
 
 FUNCTION
-U32 ColorToU32ABGR(Vec4 a) {
+U32 color_to_u32abgr(Vec4 a) {
   uint8_t r8 = (uint8_t)(a.r * 255.f);
   uint8_t g8 = (uint8_t)(a.g * 255.f);
   uint8_t b8 = (uint8_t)(a.b * 255.f);
@@ -261,7 +280,7 @@ U32 ColorToU32ABGR(Vec4 a) {
 }
 
 FUNCTION
-Vec4 V4ARGB(U32 c) {
+Vec4 v4argb(U32 c) {
   float a = ((c & 0xff000000) >> 24) / 255.f;
   float r = ((c & 0x00ff0000) >> 16) / 255.f;
   float g = ((c & 0x0000ff00) >> 8) / 255.f;
@@ -271,7 +290,7 @@ Vec4 V4ARGB(U32 c) {
 }
 
 FUNCTION
-Vec4 V4ABGR(U32 c) {
+Vec4 v4abgr(U32 c) {
   float a = ((c & 0xff000000) >> 24) / 255.f;
   float b = ((c & 0x00ff0000) >> 16) / 255.f;
   float g = ((c & 0x0000ff00) >> 8) / 255.f;
@@ -281,13 +300,13 @@ Vec4 V4ABGR(U32 c) {
 }
 
 FUNCTION
-float Lerp(float a, float b, float t) {
+float lerp(float a, float b, float t) {
   float result = (1.0f - t) * a + t * b;
   return result;
 }
 
 FUNCTION
-Vec4 Lerp(Vec4 a, Vec4 b, float t) {
-  Vec4 result = {Lerp(a.x,b.x,t), Lerp(a.y,b.y,t), Lerp(a.z,b.z,t), Lerp(a.w,b.w,t) };
+Vec4 lerp(Vec4 a, Vec4 b, float t) {
+  Vec4 result = {lerp(a.x,b.x,t), lerp(a.y,b.y,t), lerp(a.z,b.z,t), lerp(a.w,b.w,t) };
   return result;
 }

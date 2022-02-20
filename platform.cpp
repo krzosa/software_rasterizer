@@ -7,50 +7,41 @@
 #include <windows.h>
 #include <shellscalingapi.h>
 
+struct OSWin32 {
+  HBITMAP screen_dib;
+  HDC screen_dc;
+  HDC window_dc;
+  HWND hwnd;
+  HINSTANCE hinstance;
+};
 
 typedef HRESULT tSetProcessDpiAwareness(PROCESS_DPI_AWARENESS);
+GLOBAL OS *wnd_proc_os = 0;
 
-Image screen;
-bool keydown_a;
-bool keydown_b;
-bool keydown_f1;
-bool keydown_f2;
-bool keydown_f3;
-
-GLOBAL bool g_app_is_running = true;
-GLOBAL HBITMAP g_screen_dib;
-GLOBAL HDC g_screen_dc;
-GLOBAL HDC g_window_dc;
-GLOBAL HWND g_hwnd;
-GLOBAL HINSTANCE g_hinstance;
-GLOBAL int g_cmdshow;
-
-
-FUNCTION
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
   LRESULT result = 0;
   switch (uMsg) {
-  case WM_CLOSE: DestroyWindow(hwnd); g_app_is_running = false; break;
-  case WM_DESTROY: PostQuitMessage(0); g_app_is_running = false; break;
+    case WM_CLOSE: DestroyWindow(hwnd); wnd_proc_os->app_is_running = false; break;
+    case WM_DESTROY: PostQuitMessage(0); wnd_proc_os->app_is_running = false; break;
   case WM_SYSKEYDOWN:
   case WM_KEYDOWN: {
     switch (wParam) {
-    case VK_ESCAPE: g_app_is_running = false; break;
-    case 0x4F: keydown_a = true; break;
-    case 0x50: keydown_b = true; break;
-    case VK_F1: keydown_f1 = true; break;
-    case VK_F2: keydown_f2 = true; break;
-    case VK_F3: keydown_f3 = true; break;
+      case VK_ESCAPE: wnd_proc_os->app_is_running = false; break;
+      case 0x4F: wnd_proc_os->keydown_a = true; break;
+      case 0x50: wnd_proc_os->keydown_b = true; break;
+      case VK_F1: wnd_proc_os->keydown_f1 = true; break;
+      case VK_F2: wnd_proc_os->keydown_f2 = true; break;
+      case VK_F3: wnd_proc_os->keydown_f3 = true; break;
     }
   } break;
   case WM_SYSKEYUP:
   case WM_KEYUP: {
     switch (wParam) {
-    case 0x4F: keydown_a = false; break;
-    case 0x50: keydown_b = false; break;
-    case VK_F1: keydown_f1 = false; break;
-    case VK_F2: keydown_f2 = false; break;
-    case VK_F3: keydown_f3 = false; break;
+      case 0x4F: wnd_proc_os->keydown_a = false; break;
+      case 0x50: wnd_proc_os->keydown_b = false; break;
+      case VK_F1: wnd_proc_os->keydown_f1 = false; break;
+      case VK_F2: wnd_proc_os->keydown_f2 = false; break;
+      case VK_F3: wnd_proc_os->keydown_f3 = false; break;
     }
   } break;
   default: result = DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -59,7 +50,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 FUNCTION
-void Win32_ScreenInit(int window_x, int window_y) {
+void win32_screen_init(OS *os, int window_x, int window_y) {
+  OSWin32 *w32 = (OSWin32 *)os->os_internal_data;
   BITMAPINFO bminfo = {};
   bminfo.bmiHeader.biSize = sizeof(bminfo.bmiHeader);
   bminfo.bmiHeader.biWidth = window_x;
@@ -71,14 +63,16 @@ void Win32_ScreenInit(int window_x, int window_y) {
   bminfo.bmiHeader.biYPelsPerMeter = 1;
 
   void* mem = 0;
-  g_screen_dib = CreateDIBSection(g_window_dc, &bminfo, DIB_RGB_COLORS, (void**)&mem, 0, 0);
-  g_screen_dc = CreateCompatibleDC(g_window_dc);
-  screen.pixels = (U32*)mem;
-  screen.x = window_x;
-  screen.y = window_y;
+  w32->screen_dib = CreateDIBSection(w32->window_dc, &bminfo, DIB_RGB_COLORS, (void**)&mem, 0, 0);
+  w32->screen_dc = CreateCompatibleDC(w32->window_dc);
+  os->screen.pixels = (U32*)mem;
+  os->screen.x = window_x;
+  os->screen.y = window_y;
 }
 
-void OS_Init(OSInitArgs i) {
+void OS::init(OSInitArgs i) {
+  OSWin32 *w32 = (OSWin32 *)os_internal_data;
+  w32->hinstance = (HINSTANCE)GetModuleHandle(NULL);
   HMODULE shcore = LoadLibraryA("Shcore.dll");
   if (shcore) {
     tSetProcessDpiAwareness* set_dpi_awr = (tSetProcessDpiAwareness*)GetProcAddress(shcore, "SetProcessDpiAwareness");
@@ -91,11 +85,11 @@ void OS_Init(OSInitArgs i) {
   const wchar_t CLASS_NAME[] = L"Hello!";
   WNDCLASS wc = { };
   wc.lpfnWndProc = WindowProc;
-  wc.hInstance = g_hinstance;
+  wc.hInstance = w32->hinstance;
   wc.lpszClassName = CLASS_NAME;
   ASSERT(RegisterClass(&wc));
 
-  g_hwnd = CreateWindowEx(
+  w32->hwnd = CreateWindowEx(
     0,                              // Optional window styles.
     CLASS_NAME,                     // Window class
     L"Have a wonderful day!",    // Window text
@@ -103,24 +97,28 @@ void OS_Init(OSInitArgs i) {
     CW_USEDEFAULT, CW_USEDEFAULT, i.window_x, i.window_y, // Size and position
     NULL,       // Parent window    
     NULL,       // Menu
-    g_hinstance,  // Instance handle
+    w32->hinstance,  // Instance handle
     NULL        // Additional application data
   );
-  if (g_hwnd == 0) {
+  if (w32->hwnd == 0) {
     ASSERT(!"Failed to create window");
     return;
   }
   
 
-  ShowWindow(g_hwnd, SW_SHOW);
+  ShowWindow(w32->hwnd, SW_SHOW);
   RECT rect;
-  GetWindowRect(g_hwnd, &rect);
-  g_window_dc = GetWindowDC(g_hwnd);
-  Win32_ScreenInit(rect.right - rect.left, rect.bottom - rect.top);
+  GetWindowRect(w32->hwnd, &rect);
+  w32->window_dc = GetWindowDC(w32->hwnd);
+  win32_screen_init(this, rect.right - rect.left, rect.bottom - rect.top);
+  app_is_running = true;
 }
 
-bool OS_GameLoop() {
+bool OS::game_loop() {
+  OSWin32 *w32 = (OSWin32 *)os_internal_data;
+
   MSG msg = { };
+  wnd_proc_os = this;
   while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE) > 0) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
@@ -128,7 +126,7 @@ bool OS_GameLoop() {
 
   // @Note: Free the screen on window resize
   RECT rect;
-  GetWindowRect(g_hwnd, &rect);
+  GetWindowRect(w32->hwnd, &rect);
   int new_width = rect.right - rect.left;
   int new_height = rect.bottom - rect.top;
   if (new_width != screen.x || new_height != screen.y) {
@@ -136,14 +134,14 @@ bool OS_GameLoop() {
     screen.y = new_height;
     if (screen.pixels) {
       screen.pixels = 0;
-      DeleteDC(g_screen_dc);
-      DeleteObject(g_screen_dib);
+      DeleteDC(w32->screen_dc);
+      DeleteObject(w32->screen_dib);
     }
   }
 
   // @Note: Create drawable screen
   if (!screen.pixels) {
-    Win32_ScreenInit((LONG)screen.x, (LONG)screen.y);
+    win32_screen_init(this, (LONG)screen.x, (LONG)screen.y);
   }
 
   // @Note: Draw screen to window
@@ -157,33 +155,35 @@ bool OS_GameLoop() {
       }
     }
 
-    SelectObject(g_screen_dc, g_screen_dib);
-    BitBlt(g_window_dc, 0, 0, (int)screen.x, (int)screen.y, g_screen_dc, 0, 0, SRCCOPY);
+    SelectObject(w32->screen_dc, w32->screen_dib);
+    BitBlt(w32->window_dc, 0, 0, (int)screen.x, (int)screen.y, w32->screen_dc, 0, 0, SRCCOPY);
   }
   
   Sleep(16);
-  return g_app_is_running;
+  return app_is_running;
 }
 
 int main();
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
-  g_hinstance = hInstance;
-  g_cmdshow = nCmdShow;
   return main();
 }
 
 #include <stdio.h>
-void OS_Message(const char* format, ...) {
+void OS::message(int debug, const char* format, ...) {
   char buffer[1024];
   va_list args;
   va_start(args, format);
   vsnprintf(buffer, 1024, format, args);
   va_end(args);
-
-  MessageBoxA(0, buffer, "Error!", 0);
+  if (debug) {
+    OutputDebugStringA(buffer);
+  }
+  else {
+    MessageBoxA(0, buffer, "Error!", 0);
+  }
 }
 
-char* OS_ReadFile(const char* path) {
+char* OS::read_file(const char* path) {
   char* result = 0;
   FILE* f = fopen(path, "rb");
   if (f) {

@@ -5,22 +5,30 @@ OK Y up coordinate system, left handed
 OK Drawing a cube with perspective
 OK Culling triangles facing away from camera
 OK Texture mapping
-? Basic math operations on Vec4 Mat4 - Muls, Dot, Cross etc. 
+? Basic math operations on Vec4 Mat4 - Muls, dot, cross etc. 
 OK Basic linear transformations - rotation, translation, scaling
 OK Bilinear filtering of textures / subpixel precison
 OK Fix the gaps between triangles (it also improved look of triangle edges)
 * Perspective matrix vs simple perspective
-* Perspective correct interpolation
-* Depth buffer 
+OK Perspective correct interpolation
+OK Depth buffer 
+KINDA_OK Gamma correct blending
+* Alpha blending??
+* Premultiplied alpha???
+* Lightning
+* LookAt Camera
 * FPS Camera
-* Reading OBJ files
-* Loading a model from PMX?
+OK Reading OBJ files
+* Reading PMX files
 * Rendering multiple objects, queue renderer
 * Clipping
 * Optimizations
 * SIMD
 * Multithreading
 *
+* Text rendering
+* Basic UI
+* Gamma correct and alpha blending
 */
 
 /* What a codebase needs:
@@ -34,6 +42,7 @@ OK Fix the gaps between triangles (it also improved look of triangle edges)
 #define BILINEAR_BLEND 1
 #define PERSPECTIVE_CORRECT_INTERPOLATION 1
 
+#define _CRT_SECURE_NO_WARNINGS
 #include "main.h"
 #include "platform.h"
 #include "math.h"
@@ -41,8 +50,10 @@ OK Fix the gaps between triangles (it also improved look of triangle edges)
 #include "objparser.h"
 #include <float.h>
 
+GLOBAL OS os = {};
 GLOBAL bool draw_rects = 0;
 GLOBAL bool draw_wireframe = 0;
+#include "rasterization_feature_selection.cpp"
 
 struct Face { 
   int p[3]; 
@@ -76,7 +87,7 @@ GLOBAL Face cube_faces[] = {
 };
 
 FUNCTION
-void DrawRect(Image* dst, float X, float Y, float w, float h, U32 color) {
+void draw_rect(Image* dst, float X, float Y, float w, float h, U32 color) {
   int max_x = (int)(MIN(X + w, dst->x) + 0.5f);
   int max_y = (int)(MIN(Y + h, dst->y) + 0.5f);
   int min_x = (int)(MAX(0, X) + 0.5f);
@@ -90,7 +101,7 @@ void DrawRect(Image* dst, float X, float Y, float w, float h, U32 color) {
 }
 
 FUNCTION
-void DrawBitmap(Image* dst, Image* src, Vec2 pos) {
+void draw_bitmap(Image* dst, Image* src, Vec2 pos) {
   I64 minx = (I64)(pos.x + 0.5);
   I64 miny = (I64)(pos.y + 0.5);
   I64 maxx = minx + src->x;
@@ -124,48 +135,61 @@ void DrawBitmap(Image* dst, Image* src, Vec2 pos) {
 }
 
 FUNCTION
-float EdgeFunction(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
+float edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
   float result = (vecp1.y - vecp0.y) * (p.x - vecp0.x) - (vecp1.x - vecp0.x) * (p.y - vecp0.y);
   return result;
 }
 
+FUNCTION
+Vec4 srgb_to_almost_linear(Vec4 a) {
+  Vec4 result = {a.r*a.r, a.g*a.g, a.b*a.b, a.a};
+  return result; // @Note: Linear would be to power of 2.2
+}
+
+FUNCTION
+Vec4 almost_linear_to_srgb(Vec4 a) {
+  Vec4 result = { sqrt(a.r), sqrt(a.g), sqrt(a.b), a.a };
+  return result;
+}
+
 FUNCTION 
-void DrawTriangle(Image* dst, float *depth_buffer, Image *src, Vec4 p0, Vec4 p1, Vec4 p2,
+void draw_triangle(Image* dst, float *depth_buffer, Image *src, 
+                  Vec4 p0,   Vec4 p1,   Vec4 p2,
                   Vec2 tex0, Vec2 tex1, Vec2 tex2) {
   float min_x1 = (float)(MIN(p0.x, MIN(p1.x, p2.x)));
   float min_y1 = (float)(MIN(p0.y, MIN(p1.y, p2.y)));
   float max_x1 = (float)(MAX(p0.x, MAX(p1.x, p2.x)));
   float max_y1 = (float)(MAX(p0.y, MAX(p1.y, p2.y)));
-  I64 min_x = (I64)MAX(0, Floor(min_x1));
-  I64 min_y = (I64)MAX(0, Floor(min_y1));
-  I64 max_x = (I64)MIN(dst->x, Ceil(max_x1));
-  I64 max_y = (I64)MIN(dst->y, Ceil(max_y1));
+  I64 min_x = (I64)MAX(0, floor(min_x1));
+  I64 min_y = (I64)MAX(0, floor(min_y1));
+  I64 max_x = (I64)MIN(dst->x, ceil(max_x1));
+  I64 max_y = (I64)MIN(dst->y, ceil(max_y1));
 
-  float area = EdgeFunction(p0, p1, p2);
+  float area = edge_function(p0, p1, p2);
   for (I64 y = min_y; y < max_y; y++) {
     for (I64 x = min_x; x < max_x; x++) {
-      float edge1 = EdgeFunction(p0, p1, { (float)x,(float)y });
-      float edge2 = EdgeFunction(p1, p2, { (float)x,(float)y });
-      float edge3 = EdgeFunction(p2, p0, { (float)x,(float)y });
+      float edge1 = edge_function(p0, p1, { (float)x,(float)y });
+      float edge2 = edge_function(p1, p2, { (float)x,(float)y });
+      float edge3 = edge_function(p2, p0, { (float)x,(float)y });
 
       if (edge1 >= 0 && edge2 >= 0 && edge3 >= 0) {
         float w1 = edge2 / area;
         float w2 = edge3 / area;
         float w3 = edge1 / area;
+        float interpolated_z = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
 #if PERSPECTIVE_CORRECT_INTERPOLATION
         float u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
         float v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
-
-        float interpolated_z = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
         u /= interpolated_z;
         v /= interpolated_z;
-        interpolated_z = 1.f / interpolated_z;
 #else
         float u = tex0.x * w1 + tex1.x * w2 + tex2.x * w3;
         float v = tex0.y * w1 + tex1.y * w2 + tex2.y * w3;
 #endif
+        // @Note: We could do: interpolated_z = 1.f / interpolated_z to get proper depth
+        // but why waste an instruction, the smaller the depth value the farther the object
         float* depth = depth_buffer + (x + y * dst->x);
-        if (*depth > interpolated_z) {
+        if (*depth < interpolated_z) {
           *depth = interpolated_z;
           u = u * (src->x - 2);
           v = v * (src->y - 2);
@@ -175,16 +199,20 @@ void DrawTriangle(Image* dst, float *depth_buffer, Image *src, Vec4 p0, Vec4 p1,
           float vdiff = v - (float)vi;
           // Origin UV (0,0) is in bottom left
           U32* pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
-#if BILINEAR_BLEND
-          Vec4 pixelx1y1 = V4ABGR(*pixel);
-          Vec4 pixelx2y1 = V4ABGR(*(pixel + 1));
-          Vec4 pixelx1y2 = V4ABGR(*(pixel - src->x));
-          Vec4 pixelx2y2 = V4ABGR(*(pixel + 1 - src->x));
 
-          Vec4 blendx1 = Lerp(pixelx1y1, pixelx2y1, udiff);
-          Vec4 blendx2 = Lerp(pixelx1y2, pixelx2y2, udiff);
-          Vec4 result_color = Lerp(blendx1, blendx2, vdiff);
-          U32 color32 = ColorToU32ABGR(result_color);
+#if BILINEAR_BLEND
+          Vec4 pixelx1y1 = srgb_to_almost_linear(v4abgr(*pixel));
+          Vec4 pixelx2y1 = srgb_to_almost_linear(v4abgr(*(pixel + 1)));
+          Vec4 pixelx1y2 = srgb_to_almost_linear(v4abgr(*(pixel - src->x)));
+          Vec4 pixelx2y2 = srgb_to_almost_linear(v4abgr(*(pixel + 1 - src->x)));
+
+
+          Vec4 blendx1 = lerp(pixelx1y1, pixelx2y1, udiff);
+          Vec4 blendx2 = lerp(pixelx1y2, pixelx2y2, udiff);
+          Vec4 result_color = lerp(blendx1, blendx2, vdiff);
+          result_color = almost_linear_to_srgb(result_color);
+          ASSERT(result_color.r <= 1 && result_color.g <= 1 && result_color.b <= 1);
+          U32 color32 = color_to_u32abgr(result_color);
 #else
           U32 color32 = *pixel;
 #endif
@@ -195,14 +223,15 @@ void DrawTriangle(Image* dst, float *depth_buffer, Image *src, Vec4 p0, Vec4 p1,
     }
   }
   if (draw_rects) {
-    DrawRect(dst, p0.x-4, p0.y-4, 8,8, 0x00ff0000);
-    DrawRect(dst, p1.x-4, p1.y-4, 8,8, 0x0000ff00);
-    DrawRect(dst, p2.x-4, p2.y-4, 8,8, 0x000000ff);
+    draw_rect(dst, p0.x-4, p0.y-4, 8,8, 0x00ff0000);
+    draw_rect(dst, p1.x-4, p1.y-4, 8,8, 0x0000ff00);
+    draw_rect(dst, p2.x-4, p2.y-4, 8,8, 0x000000ff);
   }
 }
+#include "raster_functions.cpp"
 
 FUNCTION
-void DrawLine(Image *dst, float x0, float y0, float x1, float y1) {
+void draw_line(Image *dst, float x0, float y0, float x1, float y1) {
   float delta_x = (x1 - x0);
   float delta_y = (y1 - y0);
   float longest_side_length = (ABS(delta_x) >= ABS(delta_y)) ? ABS(delta_x) : ABS(delta_y);
@@ -226,16 +255,16 @@ struct FaceA {
 };
 
 FUNCTION
-Obj LoadObj(const char* file) {
-  char* data = OS_ReadFile(file);
+Obj load_obj(const char* file) {
+  char* data = os.read_file(file);
   char* memory = (char*)malloc(100000);
-  Obj result = Obj_Parse(memory, 100000, data);
+  Obj result = obj::parse(memory, 100000, data);
   free(data);
   return result;
 }
 
 FUNCTION
-Image LoadImage(const char* path) {
+Image load_image(const char* path) {
   int x, y, n;
   unsigned char* data = stbi_load(path, &x, &y, &n, 4);
   Image result = { (U32*)data, x, y };
@@ -243,23 +272,25 @@ Image LoadImage(const char* path) {
 }
 
 int main() {
-  Obj_Test();
-  OS_Init({ 1280,720 });
+  obj::test();
+  os.init({ 1280,720 });
+  generate_stuff();
+
   float rotation = 0;
   Vec3 camera_pos = {0,0,-5};
   
-  Obj obj = LoadObj("assets/f22.obj");
+  Obj obj = load_obj("assets/f22.obj");
   Vec3* vertices = (Vec3 *)obj.vertices;
   Vec2* tex_coords = (Vec2*)obj.texture;
   FaceA* faces = (FaceA*)obj.indices;
   I64 face_count = obj.indices_count;
 
 
-  Image img = LoadImage("assets/bricksx64.png");
+  Image img = load_image("assets/bricksx64.png");
   Image screen320 = {(U32 *)malloc(320*180*sizeof(U32)), 320, 180};
   float* depth320 = (float *)malloc(sizeof(float) * 320 * 180);
-  while (OS_GameLoop()) {
-    Mat4 perspective = Mat4Perspective(60.f, (float)screen.x, (float)screen.y, 0.1f, 100.f);
+  while (os.game_loop()) {
+    Mat4 perspective = make_matrix_perspective(60.f, (float)os.screen.x, (float)os.screen.y, 0.1f, 100.f);
     U32* p = screen320.pixels;
     for (int y = 0; y < screen320.y; y++) {
       for (int x = 0; x < screen320.x; x++) {
@@ -269,16 +300,16 @@ int main() {
     float* dp = depth320;
     for (int y = 0; y < screen320.y; y++) {
       for (int x = 0; x < screen320.x; x++) {
-        *dp++ = FLT_MAX;
+        *dp++ = -FLT_MAX;
       }
     }
-    DrawBitmap(&screen320, &img, {0,0});
-    Mat4 transform = Mat4RotationZ(rotation);
-    transform = transform * Mat4RotationX(rotation);
-    if (keydown_a) rotation += 0.05f;
-    if (keydown_b) rotation -= 0.05f;
-    if (keydown_f1) draw_rects = !draw_rects;
-    if (keydown_f2) draw_wireframe = !draw_wireframe;
+    draw_bitmap(&screen320, &img, {0,0});
+    Mat4 transform = make_matrix_rotation_z(rotation);
+    transform = transform * make_matrix_rotation_x(rotation);
+    if (os.keydown_a) rotation += 0.05f;
+    if (os.keydown_b) rotation -= 0.05f;
+    if (os.keydown_f1) draw_rects = !draw_rects;
+    if (os.keydown_f2) draw_wireframe = !draw_wireframe;
     for (int i = 0; i < face_count; i++) {
       FaceA* face = faces + i;
       Vec4 pos[3] = {
@@ -300,8 +331,8 @@ int main() {
       Vec3 p0_to_camera = camera_pos - pos[0].xyz;
       Vec3 p0_to_p1 = pos[1].xyz - pos[0].xyz;
       Vec3 p0_to_p2 = pos[2].xyz - pos[0].xyz;
-      Vec3 normal = Cross(p0_to_p1, p0_to_p2);
-      if (Dot(normal, p0_to_camera) > 0) {
+      Vec3 normal = cross(p0_to_p1, p0_to_p2);
+      if (dot(normal, p0_to_camera) > 0) {
         for (int j = 0; j < 3; j++) {
           //@Note: Camera
           pos[j].xyz = pos[j].xyz - camera_pos;
@@ -313,25 +344,32 @@ int main() {
           //@Note: To pixel space
           pos[j].x *= screen320.x / 2;
           pos[j].y *= screen320.y / 2;
-          pos[j].x += screen320.x / 2;
-          pos[j].y += screen320.y / 2;
+          //pos[j].x += screen320.x / 2;
+          //pos[j].y += screen320.y / 2;
+          pos[j].x += screen320.x / 4;
+          pos[j].y += screen320.y / 4;
         }
 
-        DrawTriangle(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
+        draw_triangle_PERSPECTIVE_CORRECT_INTERPOLATION_on_BILINEAR_BLEND_off(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
+        for (int j = 0; j < 3; j++) {
+          pos[j].x += screen320.x / 3;
+          pos[j].y += screen320.y / 3;
+        }
+        draw_triangle_PERSPECTIVE_CORRECT_INTERPOLATION_on_BILINEAR_BLEND_on(&screen320, depth320, &img, pos[0], pos[1], pos[2], tex[0], tex[1], tex[2]);
         if (draw_wireframe) {
-          DrawLine(&screen320, pos[0].x, pos[0].y, pos[1].x, pos[1].y);
-          DrawLine(&screen320, pos[1].x, pos[1].y, pos[2].x, pos[2].y);
-          DrawLine(&screen320, pos[2].x, pos[2].y, pos[0].x, pos[0].y);
+          draw_line(&screen320, pos[0].x, pos[0].y, pos[1].x, pos[1].y);
+          draw_line(&screen320, pos[1].x, pos[1].y, pos[2].x, pos[2].y);
+          draw_line(&screen320, pos[2].x, pos[2].y, pos[0].x, pos[0].y);
         }
       }
     }
 
     // @Note: Draw 320screen to OS screen
-    U32* ptr = screen.pixels;
-    for (int y = 0; y < screen.y; y++) {
-      for (int x = 0; x < screen.x; x++) {
-        float u = (float)x / (float)screen.x;
-        float v = (float)y / (float)screen.y;
+    U32* ptr = os.screen.pixels;
+    for (int y = 0; y < os.screen.y; y++) {
+      for (int x = 0; x < os.screen.x; x++) {
+        float u = (float)x / (float)os.screen.x;
+        float v = (float)y / (float)os.screen.y;
         int tx = (int)(u * screen320.x + 0.5f);
         int ty = (int)(v * screen320.y + 0.5f);
         *ptr++ = screen320.pixels[tx + ty * (screen320.x)];
