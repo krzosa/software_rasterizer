@@ -134,17 +134,12 @@ namespace obj {
   Obj parse(char* memory, size_t memory_size, char* data) {
     Obj_Arena arena = { memory, memory_size };
     Obj result = {};
-    int parsing_vertices = 0;
-    int parsing_normals = 0;
-    int parsing_textures = 0;
 
     for (; ; ) {
       Token token = next_token(&data);
       if (token.type == TokenType::end) break;
       else if (token.type == TokenType::word) {
         if (equals(token, "v")) {
-          assert(parsing_vertices != 2);
-          parsing_vertices = 1;
           float* ptr = (float*)push(&arena, sizeof(float) * 3);
           ptr[0] = (float)expect_number(&data);
           ptr[1] = (float)expect_number(&data);
@@ -154,10 +149,6 @@ namespace obj {
           debug_expect_raw(&data, TokenType::whitespace);
         }
         else if (equals(token, "vt")) {
-          assert(parsing_textures != 2);
-          parsing_textures = 1;
-          parsing_vertices = 2;
-
           float* ptr = (float*)push(&arena, sizeof(float) * 2);
           ptr[0] = (float)expect_number(&data);
           ptr[1] = (float)expect_number(&data);
@@ -165,10 +156,6 @@ namespace obj {
           debug_expect_raw(&data, TokenType::whitespace);
         }
         else if (equals(token, "vn")) {
-          assert((parsing_textures == 1 || parsing_textures == 2) && parsing_vertices == 2);
-          parsing_textures = 2;
-          parsing_normals = 1;
-
           float* ptr = (float*)push(&arena, sizeof(float) * 3);
           ptr[0] = (float)expect_number(&data);
           ptr[1] = (float)expect_number(&data);
@@ -177,7 +164,6 @@ namespace obj {
           debug_expect_raw(&data, TokenType::whitespace);
         }
         else if (equals(token, "f")) {
-          assert(parsing_normals == 1 && parsing_textures == 2 && parsing_vertices == 2);
           int* ptr = (int*)push(&arena, sizeof(int) * 9);
           ptr[0] = (int)expect_number(&data);
           expect_token(&data, '/');

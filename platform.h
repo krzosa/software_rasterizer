@@ -1,10 +1,10 @@
-#include "main.h"
-
+// #include "main.h"
 struct Image {
   U32* pixels;
   I64 x;
   I64 y;
 };
+#if 0
 
 struct OSInitArgs {
   int window_x; 
@@ -30,3 +30,4 @@ struct OS {
   OS(OSInitArgs args) { init(args);  }
   char os_internal_data[1024];
 };
+#endif

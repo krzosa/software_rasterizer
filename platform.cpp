@@ -1,6 +1,7 @@
 /* 
 * The OS layer should expect ABGR writes to the screen, the bitmap is bottom up(origin 0,0 is in left bottom corner)
 */
+#if 0
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "platform.h"
@@ -183,7 +184,7 @@ void OS::message(int debug, const char* format, ...) {
   }
 }
 
-char* OS::read_file(const char* path) {
+char* OS::read_file(const char* path) { 
   char* result = 0;
   FILE* f = fopen(path, "rb");
   if (f) {
@@ -207,3 +208,5 @@ char* OS::read_file(const char* path) {
   
   return result;
 }
+
+#endif

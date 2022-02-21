@@ -15,7 +15,9 @@ OK Depth buffer
 KINDA_OK Gamma correct blending
 OK Alpha blending??
 OK Premultiplied alpha???
+OK Merge with base
 * Lightning
+  OK GLOBAL Ilumination
 * LookAt Camera
 * FPS Camera
 OK Reading OBJ files
@@ -31,38 +33,25 @@ OK Reading OBJ files
 * Gamma correct and alpha blending
 */
 
-/* What a codebase needs:
-* Macros for debug, release, slow, fast builds, where debug - tooling, slow - enable asserts
-* Macros for OS, Compiler, Architecture
-* Nice way of outputing visible error messages
-* FatalError and Assert function for release builds with an error message, Debug Assert with error message for slow builds
-* 
-*/
 #define OS_WINDOWS 1
 #define PERSPECTIVE_CORRECT_INTERPOLATION 1
 #define BILINEAR_BLEND 1
   #define GAMMA_CORRECT_BLENDING 1
   #define PREMULTIPLIED_ALPHA_BLENDING 1
 
-#define _CRT_SECURE_NO_WARNINGS
-#include "main.h"
-#include "platform.h"
+#define PLATFORM
+#include "base.h"
 #include "math.h"
 #include "stb_image.h"
 #include "objparser.h"
 #include <float.h>
 
-GLOBAL OS os = {};
+//GLOBAL OS os = {};
 GLOBAL bool draw_rects = 0;
 GLOBAL bool draw_wireframe = 0;
 
-struct Face { 
-  int p[3]; 
-  Vec2 tex[3];
-};
-
 FUNCTION
-void draw_rect(Image* dst, float X, float Y, float w, float h, U32 color) {
+void draw_rect(Bitmap* dst, float X, float Y, float w, float h, U32 color) {
   int max_x = (int)(MIN(X + w, dst->x) + 0.5f);
   int max_y = (int)(MIN(Y + h, dst->y) + 0.5f);
   int min_x = (int)(MAX(0, X) + 0.5f);
@@ -89,12 +78,12 @@ Vec4 srgb_to_almost_linear(Vec4 a) {
 
 FUNCTION
 Vec4 almost_linear_to_srgb(Vec4 a) {
-  Vec4 result = { sqrt(a.r), sqrt(a.g), sqrt(a.b), a.a };
+  Vec4 result = { sqrtf(a.r), sqrtf(a.g), sqrtf(a.b), a.a };
   return result;
 }
 
 FUNCTION
-  void draw_bitmap(Image* dst, Image* src, Vec2 pos) {
+  void draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos) {
   I64 minx = (I64)(pos.x + 0.5);
   I64 miny = (I64)(pos.y + 0.5);
   I64 maxx = minx + src->x;
@@ -130,14 +119,14 @@ FUNCTION
       result_color.b = result_color.b + (1-result_color.a) * dst_color.b;
       result_color.a = result_color.a + dst_color.a - result_color.a*dst_color.a;
       result_color = almost_linear_to_srgb(result_color);
-      U32 color32 = color_to_u32abgr(result_color);
+      U32 color32 = vec4_to_u32abgr(result_color);
       *dst_pixel = color32;
     }
   }
 }
 
 FUNCTION 
-void draw_triangle(Image* dst, float *depth_buffer, Image *src, float light,
+void draw_triangle(Bitmap* dst, float *depth_buffer, Bitmap *src, float light,
                   Vec4 p0,   Vec4 p1,   Vec4 p2,
                   Vec2 tex0, Vec2 tex1, Vec2 tex2) {
   float min_x1 = (float)(MIN(p0.x, MIN(p1.x, p2.x)));
@@ -216,7 +205,7 @@ void draw_triangle(Image* dst, float *depth_buffer, Image *src, float light,
           result_color = almost_linear_to_srgb(result_color);
           //ASSERT(result_color.r <= 1 && result_color.g <= 1 && result_color.b <= 1);
   #endif // GAMMA_CORRECT_BLENDING
-          U32 color32 = color_to_u32abgr(result_color);
+          U32 color32 = vec4_to_u32abgr(result_color);
 #else // BILINEAR_BLEND
           Vec4 result_color = srgb_to_almost_linear(vec4abgr(*pixel));
           Vec4 dst_color = srgb_to_almost_linear(vec4abgr(*dst_pixel));
@@ -225,7 +214,7 @@ void draw_triangle(Image* dst, float *depth_buffer, Image *src, float light,
           result_color.b = result_color.b + (1-result_color.a) * dst_color.b;
           result_color.a = result_color.a + dst_color.a - result_color.a*dst_color.a;
           result_color = almost_linear_to_srgb(result_color);
-          U32 color32 = color_to_u32abgr(result_color);
+          U32 color32 = vec4_to_u32abgr(result_color);
 #endif // BILINEAR_BLEND
 
           *dst_pixel = color32;
@@ -241,7 +230,7 @@ void draw_triangle(Image* dst, float *depth_buffer, Image *src, float light,
 }
 
 FUNCTION
-void draw_line(Image *dst, float x0, float y0, float x1, float y1) {
+void draw_line(Bitmap *dst, float x0, float y0, float x1, float y1) {
   float delta_x = (x1 - x0);
   float delta_y = (y1 - y0);
   float longest_side_length = (ABS(delta_x) >= ABS(delta_y)) ? ABS(delta_x) : ABS(delta_y);
@@ -264,20 +253,25 @@ struct FaceA {
   int normal[3];
 };
 
+FN void null_terminate(Arena *arena) {
+  PUSH_SIZE(arena, 1);
+}
+
 FUNCTION
-Obj load_obj(const char* file) {
-  char* data = os.read_file(file);
+Obj load_obj(S8 file) {
+  Scratch scratch;
+  S8 data = os_read_file(scratch, file).error_is_fatal();
+  null_terminate(scratch);
   char* memory = (char*)malloc(100000);
-  Obj result = obj::parse(memory, 100000, data);
-  free(data);
+  Obj result = obj::parse(memory, 100000, (char *)data.str);
   return result;
 }
 
 FUNCTION
-Image load_image(const char* path) {
+Bitmap load_image(const char* path) {
   int x, y, n;
   unsigned char* data = stbi_load(path, &x, &y, &n, 4);
-  Image result = { (U32*)data, x, y };
+  Bitmap result = { (U32*)data, x, y };
 #if PREMULTIPLIED_ALPHA_BLENDING
   U32 *p = result.pixels;
   for (int Y = 0; Y < y; Y++) {
@@ -286,7 +280,7 @@ Image load_image(const char* path) {
       color.r *= color.a;
       color.g *= color.a;
       color.b *= color.a;
-      *p++ = color_to_u32abgr(color);
+      *p++ = vec4_to_u32abgr(color);
     }
   }
 #endif
@@ -295,25 +289,28 @@ Image load_image(const char* path) {
 
 int main() {
   obj::test();
-  os.init({ 1280,720 });
+  os.window_size.x = 1280;
+  os.window_size.y = 720;
+  os_init();
+  os_init_software_render();
 
   float rotation = 0;
   Vec3 camera_pos = {0,0,-5};
   
-  Obj obj = load_obj("assets/f22.obj");
+  Obj obj = load_obj(LIT("assets/f22.obj"));
   Vec3* vertices = (Vec3 *)obj.vertices;
   Vec2* tex_coords = (Vec2*)obj.texture;
+  Vec3 *normals = (Vec3 *)obj.normals;
   FaceA* faces = (FaceA*)obj.indices;
   I64 face_count = obj.indices_count;
 
-
-  Image img = load_image("assets/bricksx64.png");
+  Bitmap img = load_image("assets/bricksx64.png");
   int screen_x = 320;
   int screen_y = 180;
-  Image screen320 = {(U32 *)malloc(screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
+  Bitmap screen320 = {(U32 *)malloc(screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   float* depth320 = (float *)malloc(sizeof(float) * screen_x * screen_y);
-  while (os.game_loop()) {
-    Mat4 perspective = make_matrix_perspective(60.f, (float)os.screen.x, (float)os.screen.y, 0.1f, 100.f);
+  while (os_game_loop()) {
+    Mat4 perspective = make_matrix_perspective(60.f, (float)screen->x, (float)screen->y, 0.1f, 100.f);
     U32* p = screen320.pixels;
     for (int y = 0; y < screen320.y; y++) {
       for (int x = 0; x < screen320.x; x++) {
@@ -329,10 +326,11 @@ int main() {
 
     Mat4 transform = make_matrix_rotation_z(rotation);
     transform = transform * make_matrix_rotation_x(rotation);
-    if (os.keydown_a) rotation += 0.05f;
-    if (os.keydown_b) rotation -= 0.05f;
-    if (os.keydown_f1) draw_rects = !draw_rects;
-    if (os.keydown_f2) draw_wireframe = !draw_wireframe;
+    if (os.key[Key_Escape].pressed) os.quit = true;
+    if (os.key[Key_O].down) rotation += 0.05f;
+    if (os.key[Key_P].down) rotation -= 0.05f;
+    if (os.key[Key_F1].pressed) draw_rects = !draw_rects;
+    if (os.key[Key_F2].pressed) draw_wireframe = !draw_wireframe;
     for (int i = 0; i < face_count; i++) {
       FaceA* face = faces + i;
       Vec4 pos[3] = {
@@ -345,6 +343,11 @@ int main() {
         tex_coords[face->tex[1] - 1],
         tex_coords[face->tex[2] - 1],
       };
+      Vec3 norm[3] = {
+        normals[face->normal[0] - 1],
+        normals[face->normal[1] - 1],
+        normals[face->normal[2] - 1],
+      };
 
       //@Note: Transform
       for (int j = 0; j < 3; j++) {
@@ -356,7 +359,7 @@ int main() {
       Vec3 p0_to_p2 = pos[2].xyz - pos[0].xyz;
       Vec3 normal = normalize(cross(p0_to_p1, p0_to_p2));
       float light = -dot(normal, vec3(0,1,0));
-      light = CLAMP(0.05, light, 1);
+      light = CLAMP(0.05f, light, 1.f);
       if (dot(normal, p0_to_camera) > 0) {
         for (int j = 0; j < 3; j++) {
           //@Note: Camera
@@ -388,13 +391,13 @@ int main() {
     }
 
     // @Note: Draw 320screen to OS screen
-    U32* ptr = os.screen.pixels;
-    for (int y = 0; y < os.screen.y; y++) {
-      for (int x = 0; x < os.screen.x; x++) {
-        float u = (float)x / (float)os.screen.x;
-        float v = (float)y / (float)os.screen.y;
-        int tx = (int)(u * screen320.x + 0.5f);
-        int ty = (int)(v * screen320.y + 0.5f);
+    U32* ptr = screen->pixels;
+    for (int y = 0; y < screen->y; y++) {
+      for (int x = 0; x < screen->x; x++) {
+        float u = (float)x / (float)screen->x;
+        float v = (float)y / (float)screen->y;
+        int tx = (int)(u * screen320.x );
+        int ty = (int)(v * screen320.y );
         *ptr++ = screen320.pixels[tx + ty * (screen320.x)];
       }
     }
