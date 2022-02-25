@@ -1,5 +1,7 @@
 .vs/
 x64/
+assets/
 
 *.sln
 *.vcxproj*
+*.rdbg
