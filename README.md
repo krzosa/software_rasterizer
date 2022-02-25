@@ -1,6 +1,6 @@
 
 
-# Things to do:
+### Things to do:
 
 - [x] Drawing triangles
 - [x] Drawing cubes and lines for testing
@@ -49,7 +49,7 @@
 - [ ] Basic UI
 - [ ] Gamma correct and alpha blending
 
-# Resources that helped me build the rasterizer (Might be helpful to you too):
+### Resources that helped me build the rasterizer (Might be helpful to you too):
 
 * Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
 * Fabian Giessen's "Optimizing Software Occlusion Culling": https://fgiesen.wordpress.com/2013/02/17/optimizing-sw-occlusion-culling-index/
@@ -65,6 +65,6 @@
 *
 *
 
-## To read
+### To read
 
 * http://ce-publications.et.tudelft.nl/publications/1362_hardware_algorithms_for_tilebased_realtime_rendering.pdf
