@@ -22,12 +22,14 @@
 /// - [ ] Lightning
 ///   - [x] GLOBAL Ilumination
 /// - [x] LookAt Camera
-/// - [ ] FPS Camera
+/// - [x] FPS Camera
 /// - [x] Reading OBJ models
+/// - [ ] Reading more OBJ formats
 /// - [ ] Reading OBJ .mtl files
-/// - [ ] Reading complex obj models (sponza)
+/// - [x] Reading complex obj models (sponza)
 /// - [ ] Reading PMX files
 /// - [ ] Rendering multiple objects, queue renderer
+///   - [x] Simple function to render a mesh
 /// - [x] Clipping
 ///   - [x] Triagnle rectangle bound clipping
 ///   - [x] A way of culling Z out triangles 
@@ -40,34 +42,17 @@
 /// - [x] Find cool profilers - ExtraSleepy, Vtune
 /// - [ ] Optimizations
 ///   - [ ] Inline edge function
+///   - [ ] Expand edge functions to more optimized version
+///   - [ ] Test 4x2 bitmap layout?
 ///   - [ ] Edge function to integer
 ///   - [ ] Use integer bit operations to figure out if plus. (edge1|edge2|edge3)>=0
-/// - [ ] SIMD
-/// - [ ] Multithreading
-/// - [ ]
+///   - [ ] SIMD
+///   - [ ] Multithreading
+///
 /// - [ ] Text rendering
 /// - [ ] Basic UI
 /// - [ ] Gamma correct and alpha blending
 /// 
-/// ### Resources that helped me build the rasterizer (Might be helpful to you too):
-/// 
-/// * Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
-/// * Fabian Giessen's "Optimizing Software Occlusion Culling": https://fgiesen.wordpress.com/2013/02/17/optimizing-sw-occlusion-culling-index/
-/// * Fabian Giessen's optimized software renderer: https://github.com/rygorous/intel_occlusion_cull/tree/blog/SoftwareOcclusionCulling
-/// * Fabian Giessen's javascript triangle rasterizer: https://gist.github.com/rygorous/2486101
-/// * Fabian Giessen's C++ triangle rasterizer: https://github.com/rygorous/trirast/blob/master/main.cpp
-/// * Joy's Kenneth lectures about computer graphics: https://www.youtube.com/playlist?list=PL_w_qWAQZtAZhtzPI5pkAtcUVgmzdAP8g
-/// * Joy's Kenneth article on clipping: https://import.cdn.thinkific.com/167815/JoyKennethClipping-200905-175314.pdf
-/// * A bunch of helpful notes and links to resources: https://nlguillemot.wordpress.com/2016/07/10/rasterizer-notes/
-/// * Very nice paid course on making a software rasterizer using a scanline method: https://pikuma.com/courses/learn-3d-computer-graphics-programming
-/// * Reference for obj loader: https://github.com/tinyobjloader/tinyobjloader/blob/master/tiny_obj_loader.h
-/// *
-/// * 
-/// * 
-///
-/// ### To read
-///
-/// * http://ce-publications.et.tudelft.nl/publications/1362_hardware_algorithms_for_tilebased_realtime_rendering.pdf
 
 
 
@@ -88,6 +73,18 @@ struct R_Vertex {
 struct R_Render {
   Mat4 camera;
   Mat4 projection;
+  Mat4 transform;
+  
+
+  
+  Vec3 camera_pos;
+  Vec3 camera_direction;
+  Vec3 camera_forward_velocity;
+  Vec2 camera_yaw;
+  Vec3 camera_target;
+  Bitmap img;
+  Bitmap screen320;
+  F32 *depth320;
 };
 
 #include "obj_parser.cpp"
@@ -176,6 +173,7 @@ FUNCTION
 void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 light,
                   Vec4 p0,   Vec4 p1,   Vec4 p2,
                   Vec2 tex0, Vec2 tex1, Vec2 tex2) {
+  if(os.frame > 60) PROFILE_BEGIN(draw_triangle);
   F32 min_x1 = (F32)(MIN(p0.x, MIN(p1.x, p2.x)));
   F32 min_y1 = (F32)(MIN(p0.y, MIN(p1.y, p2.y)));
   F32 max_x1 = (F32)(MAX(p0.x, MAX(p1.x, p2.x)));
@@ -243,6 +241,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
     draw_rect(dst, p1.x-4, p1.y-4, 8,8, 0x0000ff00);
     draw_rect(dst, p2.x-4, p2.y-4, 8,8, 0x000000ff);
   }
+  if(os.frame > 60) PROFILE_END(draw_triangle);
 }
 
 FUNCTION 
@@ -365,7 +364,183 @@ Bitmap load_image(const char* path) {
   return result;
 }
 
-FN void r_draw_mesh(ObjMesh *mesh) {
+S8 scenario_name = string_null;
+FN void r_draw_mesh(R_Render *r, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
+  for (int i = 0; i < mesh->indices.len; i++) {
+    ObjIndex *index = mesh->indices.e + i;
+    R_Vertex vert[] = {  
+      {
+        vertices[index->vertex[0] - 1],
+          tex_coords[index->tex[0] - 1],
+          normals[index->normal[0] - 1],
+      },
+      {
+        vertices[index->vertex[1] - 1],
+          tex_coords[index->tex[1] - 1],
+          normals[index->normal[1] - 1],
+      },
+      {
+        vertices[index->vertex[2] - 1],
+          tex_coords[index->tex[2] - 1],
+          normals[index->normal[2] - 1],
+      },
+    };
+
+    //@Note: Transform
+    for (int j = 0; j < 3; j++) {
+      vert[j].pos = r->transform * vert[j].pos;
+    }
+
+      
+    Vec3 p0_to_camera = r->camera_pos - vert[0].pos;
+    Vec3 p0_to_p1 = vert[1].pos - vert[0].pos;
+    Vec3 p0_to_p2 = vert[2].pos - vert[0].pos;
+    Vec3 normal = normalize(cross(p0_to_p1, p0_to_p2));
+    Vec3 light_direction = mat4_rotation_y(45) * vec3(0, 0, 1);
+    F32 light = -dot(normal, light_direction);
+    light = CLAMP(0.05f, light, 1.f);
+    if (dot(normal, p0_to_camera) > 0) { //@Note: Backface culling
+      /// ## Clipping 
+      /// 
+      /// There are 3 clipping stages, 2 clipping stages in 3D space against zfar and znear and 1 clipping 
+      /// stage in 2D againts left,bottom,right,top(2D image bounds). 
+      ///
+      /// First the triangles get clipped against the zfar plane, 
+      /// if a triangle has even one vertex outside the clipping region, the entire triangle gets cut.
+      /// So far I didn't have problems with that. It simplifies the computations and splitting triangles
+      /// on zfar seems like a waste of power.
+      ///
+      /// The second clipping stage is znear plane. Triangles get fully and nicely clipped against znear.
+      /// Every time a triangle gets partially outside the clipping region it gets cut to the znear and
+      /// either one or two new triangles get derived from the old one.
+      /// 
+      /// Last clipping stage is performed in the 2D image space. Every triangle has a corresponding AABB 
+      /// box. In this box every pixel gets tested to see if it's in the triangle. In this clipping stage
+      /// the box is clipped to the image metrics - 0, 0, width, height.
+      /// 
+      /// 
+      // @Note: Zfar
+      B32 vertex_is_outside = false;
+      Vec3 zfar_normal = vec3(0, 0, -1);
+      Vec3 zfar_pos = vec3(0, 0, 10000.f);
+      for (I32 j = 0; j < 3; j++) {
+        // @Note: Camera
+        vert[j].pos = r->camera * vert[j].pos;
+        // @Note: Skip triangle if even one vertex gets outside the clipping plane
+        if ((dot(zfar_normal, vert[j].pos - zfar_pos) < 0)) { 
+          vertex_is_outside = true;
+          break;
+        }
+      }
+
+      if (vertex_is_outside) {
+        continue;
+      }
+        
+      // @Note: Znear, clip triangles to the near clipping plane
+      Vec3 znear_normal = vec3(0, 0, 1);
+      Vec3 znear_pos = vec3(0, 0, 1.f);
+
+      struct _R_Vertex {
+        Vec4 pos;
+        Vec2 tex;
+      } in[4];
+      I32 in_count = 0;
+
+      R_Vertex *prev = vert + 2;
+      R_Vertex *curr = vert;
+      F32       prev_dot = dot(znear_normal, prev->pos - znear_pos);
+      F32       curr_dot = 0;
+      for (int j = 0; j < 3; j++) {
+        curr_dot = dot(znear_normal, curr->pos - znear_pos);
+        if (curr_dot * prev_dot < 0) {
+          F32 t = prev_dot / (prev_dot - curr_dot);
+          in[in_count].pos = vec4(lerp(prev->pos, curr->pos, t), 1);
+          in[in_count++].tex = lerp(prev->tex, curr->tex, t);
+        }
+        if (curr_dot > 0) {
+          in[in_count].pos = vec4(vert[j].pos, 1);
+          in[in_count++].tex = vert[j].tex;
+        }
+        prev = curr++;
+        prev_dot = curr_dot;
+      }
+
+      if (in_count == 0) {
+        continue;
+      }
+
+      for(I64 j = 0; j < in_count; j++) {
+        //@Note: Perspective
+        in[j].pos = r->projection * in[j].pos;
+        in[j].pos.x = in[j].pos.x / in[j].pos.w;
+        in[j].pos.y = in[j].pos.y / in[j].pos.w;
+        in[j].pos.z = in[j].pos.z / in[j].pos.w;
+        //@Note: To pixel space
+        in[j].pos.x *= r->screen320.x / 2;
+        in[j].pos.y *= r->screen320.y / 2;
+        in[j].pos.x += r->screen320.x / 2;
+        in[j].pos.y += r->screen320.y / 2;
+      }
+
+      
+      draw_triangle_nearest(&r->screen320, r->depth320, &r->img, light, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex);
+      if (in_count > 3) {
+        draw_triangle_nearest(&r->screen320, r->depth320, &r->img, light, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex);
+      }
+        
+        
+#if 1
+      ProfileScope *scope = profile_scopes + ProfileScopeName_draw_triangle;
+      LOCAL_PERSIST B32 profile_flag;
+      if (!profile_flag && scope->i > 2000) {
+        profile_flag = 1;
+        for (I64 si = 1; si < profile_scopes[ProfileScopeName_draw_triangle].i; si++) {
+          for (I64 sj = 1; sj < profile_scopes[ProfileScopeName_draw_triangle].i; sj++) {
+            if (profile_scopes[ProfileScopeName_draw_triangle].samples[sj] < profile_scopes[ProfileScopeName_draw_triangle].samples[sj - 1]) {
+              F64 temp = profile_scopes[ProfileScopeName_draw_triangle].samples[sj];
+              profile_scopes[ProfileScopeName_draw_triangle].samples[sj] = profile_scopes[ProfileScopeName_draw_triangle].samples[sj-1];
+              profile_scopes[ProfileScopeName_draw_triangle].samples[sj-1] = temp;
+            }
+          }
+        }
+
+        {
+          Scratch scratch;
+          U8 *string_pointer = string_begin(scratch);
+
+          I64 one_past_last = profile_scopes[ProfileScopeName_draw_triangle].i;
+          F64 sum = 0;
+          for (I64 si = 0; si < one_past_last; si++) {
+            sum += scope->samples[si];
+            //string_format(scratch, "%f;", scope->samples[si]);
+          }
+          I64 index25perc = one_past_last / 4 - 1;
+          F64 min = profile_scopes[ProfileScopeName_draw_triangle].samples[0];
+          F64 percentile25 = profile_scopes[ProfileScopeName_draw_triangle].samples[index25perc];
+          F64 median = profile_scopes[ProfileScopeName_draw_triangle].samples[one_past_last / 2 - 1];
+          F64 percentile75 = profile_scopes[ProfileScopeName_draw_triangle].samples[index25perc*3];
+          F64 max = profile_scopes[ProfileScopeName_draw_triangle].samples[one_past_last - 1];
+          F64 avg = sum / scope->i;
+
+          S8 build_name = BUILD_NAME;
+          string_format(scratch, "%s_%s = min:%f 25%%:%f median:%f 75%%:%f max: %f avg:%f\n", build_name, scenario_name, min, percentile25, median, percentile75, max, avg);
+          S8 data = string_end(scratch, string_pointer);
+          os_append_file(LIT("data.txt"), data);
+        }
+        
+        
+        
+      }
+#endif
+        
+      if (draw_wireframe) {
+        draw_line(&r->screen320, vert[0].pos.x, vert[0].pos.y, vert[1].pos.x, vert[1].pos.y);
+        draw_line(&r->screen320, vert[1].pos.x, vert[1].pos.y, vert[2].pos.x, vert[2].pos.y);
+        draw_line(&r->screen320, vert[2].pos.x, vert[2].pos.y, vert[0].pos.x, vert[0].pos.y);
+      }
+    }
+  }
 }
 
 int main() {
@@ -377,193 +552,68 @@ int main() {
   string_push(os.frame_arena, &list, LIT("main.cpp"));
   generate_documentation(list, LIT("README.md"));
 
-  Obj obj = load_obj(LIT("assets/sponza/sponza_mini.obj"));
-  
-  //Obj obj = load_obj(LIT("assets/f22.obj"));
-  ObjMesh *mesh = obj.mesh.e + 1;
-
-  F32 speed = 0.01f;
-  F32 rotation = 405;
-  Vec3 camera_pos = {0,0,-2};
-  //Vec3 camera_target = { 300, 200, 0 };
-  Vec3 camera_target = { 0, 0, 0 };
-  bool lock_camera_flag = 1;
+  scenario_name = LIT("assets/f22.obj");
+  //scenario_name = LIT("assets/AnyConv.com__White.obj");
+  //scenario_name = LIT("assets/sponza/sponza.obj");
+  Obj obj = load_obj(scenario_name);
   Vec3* vertices = (Vec3 *)obj.vertices.e;
   Vec2* tex_coords = (Vec2*)obj.texture_coordinates.e;
   Vec3 *normals = (Vec3 *)obj.normals.e;
+  ObjMesh *mesh = obj.mesh.e;
 
-  Bitmap img = load_image("assets/bricksx64.png");
+  F32 speed = 5.f;
+  F32 rotation = 0;
+
   int screen_x = 320;
   int screen_y = 180;
-  Bitmap screen320 = {(U32 *)PUSH_SIZE(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
-  F32* depth320 = (F32 *)PUSH_SIZE(os.perm_arena, sizeof(F32) * screen_x * screen_y);
+  R_Render r = {};
+  r.camera_pos = {0,0,-2};
+  r.screen320 = {(U32 *)PUSH_SIZE(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
+  r.depth320 = (F32 *)PUSH_SIZE(os.perm_arena, sizeof(F32) * screen_x * screen_y);
+  r.img = load_image("assets/bricksx64.png");
   while (os_game_loop()) {
-    Mat4 perspective = mat4_perspective(60.f, (F32)os.screen->x, (F32)os.screen->y, 0.1f, 1000.f);
-    Mat4 camera = mat4_look_at(camera_pos, camera_target, vec3(0, 1, 0));
-    U32* p = screen320.pixels;
-    for (int y = 0; y < screen320.y; y++) {
-      for (int x = 0; x < screen320.x; x++) {
-        *p++ = 0x33333333;
-      }
-    }
-    F32* dp = depth320;
-    for (int y = 0; y < screen320.y; y++) {
-      for (int x = 0; x < screen320.x; x++) {
-        *dp++ = -FLT_MAX;
-      }
-    }
-
-    Mat4 transform = mat4_rotation_z(rotation);
-    transform = transform * mat4_rotation_y(rotation);
+    r.camera_yaw.x += os.delta_mouse_pos.x * (F32)os.delta_time * 0.2f;
+    r.camera_yaw.y += os.delta_mouse_pos.y * (F32)os.delta_time * 0.2f;
     if (os.key[Key_Escape].pressed) os_quit();
     if (os.key[Key_O].down) rotation += 0.05f;
     if (os.key[Key_P].down) rotation -= 0.05f;
     if (os.key[Key_F1].pressed) draw_rects = !draw_rects;
     if (os.key[Key_F2].pressed) draw_wireframe = !draw_wireframe;
-    if (os.key[Key_A].down) camera_target.x -= speed;
-    if (os.key[Key_D].down) camera_target.x += speed;
-    if (os.key[Key_W].down) camera_target.y += speed;
-    if (os.key[Key_S].down) camera_target.y -= speed;
-    if (os.key[Key_R].down) camera_pos.z += speed;
-    if (os.key[Key_F].down) camera_pos.z -= speed;
-    for (int i = 0; i < mesh->indices.len; i++) {
-      ObjIndex *index = mesh->indices.e + i;
-      R_Vertex vert[] = {  
-        {
-          vertices[index->vertex[0] - 1],
-          tex_coords[index->tex[0] - 1],
-          normals[index->normal[0] - 1],
-        },
-        {
-          vertices[index->vertex[1] - 1],
-          tex_coords[index->tex[1] - 1],
-          normals[index->normal[1] - 1],
-        },
-        {
-          vertices[index->vertex[2] - 1],
-          tex_coords[index->tex[2] - 1],
-          normals[index->normal[2] - 1],
-        },
-      };
-      if (lock_camera_flag) {
-        camera_pos = vert[0].pos - vec3(0,-100,130);
-        camera_target = vert[0].pos;
-        camera = mat4_look_at(camera_pos, camera_target, vec3(0, 1, 0));
-          lock_camera_flag = 0;
-      }
-
-      //@Note: Transform
-      for (int j = 0; j < 3; j++) {
-        vert[j].pos = transform * vert[j].pos;
-      }
-
-      
-      Vec3 p0_to_camera = camera_pos - vert[0].pos;
-      Vec3 p0_to_p1 = vert[1].pos - vert[0].pos;
-      Vec3 p0_to_p2 = vert[2].pos - vert[0].pos;
-      Vec3 normal = normalize(cross(p0_to_p1, p0_to_p2));
-      Vec3 light_direction = mat4_rotation_y(45) * vec3(0, 0, 1);
-      F32 light = -dot(normal, light_direction);
-      light = CLAMP(0.05f, light, 1.f);
-      if (dot(normal, p0_to_camera) > 0) { //@Note: Backface culling
-        // @Note: Zfar
-        B32 vertex_is_outside = false;
-        Vec3 zfar_normal = vec3(0, 0, -1);
-        Vec3 zfar_pos = vec3(0, 0, 1000.f);
-        for (I32 j = 0; j < 3; j++) {
-          // @Note: Camera
-          vert[j].pos = camera * vert[j].pos;
-          // @Note: Skip triangle if even one vertex gets outside the clipping plane
-          if ((dot(zfar_normal, vert[j].pos - zfar_pos) < 0)) { 
-            vertex_is_outside = true;
-            break;
-          }
-        }
-
-        if (vertex_is_outside) {
-          continue;
-        }
-        
-        // @Note: Znear, clip triangles to the near clipping plane
-        Vec3 znear_normal = vec3(0, 0, 1);
-        Vec3 znear_pos = vec3(0, 0, 1.f);
-
-        struct _R_Vertex {
-          Vec4 pos;
-          Vec2 tex;
-        } in[4];
-        I32 in_count = 0;
-
-        R_Vertex *prev = vert + 2;
-        R_Vertex *curr = vert;
-        F32       prev_dot = dot(znear_normal, prev->pos - znear_pos);
-        F32       curr_dot = 0;
-        for (int j = 0; j < 3; j++) {
-          curr_dot = dot(znear_normal, curr->pos - znear_pos);
-          if (curr_dot * prev_dot < 0) {
-            F32 t = prev_dot / (prev_dot - curr_dot);
-            in[in_count].pos = vec4(lerp(prev->pos, curr->pos, t), 1);
-            in[in_count++].tex = lerp(prev->tex, curr->tex, t);
-          }
-          if (curr_dot > 0) {
-            in[in_count].pos = vec4(vert[j].pos, 1);
-            in[in_count++].tex = vert[j].tex;
-          }
-          prev = curr++;
-          prev_dot = curr_dot;
-        }
-
-        if (in_count == 0) {
-          continue;
-        }
-
-        for(I64 j = 0; j < in_count; j++) {
-          //@Note: Perspective
-          in[j].pos = perspective * in[j].pos;
-          in[j].pos.x = in[j].pos.x / in[j].pos.w;
-          in[j].pos.y = in[j].pos.y / in[j].pos.w;
-          in[j].pos.z = in[j].pos.z / in[j].pos.w;
-          //@Note: To pixel space
-          in[j].pos.x *= screen320.x / 2;
-          in[j].pos.y *= screen320.y / 2;
-          in[j].pos.x += screen320.x / 2;
-          in[j].pos.y += screen320.y / 2;
-        }
-
-        if(os.frame > 60) PROFILE_BEGIN(draw_triangle);
-        draw_triangle_nearest(&screen320, depth320, &img, light, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex);
-        if(os.frame > 60) PROFILE_END(draw_triangle);
-
-        if (in_count > 3) {
-          if(os.frame > 60) PROFILE_BEGIN(draw_triangle);
-          draw_triangle_nearest(&screen320, depth320, &img, light, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex);
-          if(os.frame > 60) PROFILE_END(draw_triangle);
-        }
-        
-        
-#if 1
-        ProfileScope *scope = profile_scopes + ProfileScopeName_draw_triangle;
-        LOCAL_PERSIST B32 profile_flag;
-        if (!profile_flag && scope->i > 2000) {
-          profile_flag = 1;
-          F64 sum = 0;
-          for (I64 i = 0; i < profile_scopes[ProfileScopeName_draw_triangle].i; i++) {
-            sum += scope->samples[i];
-          }
-          F64 avg = sum / scope->i;
-          S8 data = string_format(os.frame_arena, "avg:%f\n", avg);
-          os_append_file(LIT("data.txt"), data);
-        }
-#endif
-        
-        if (draw_wireframe) {
-          draw_line(&screen320, vert[0].pos.x, vert[0].pos.y, vert[1].pos.x, vert[1].pos.y);
-          draw_line(&screen320, vert[1].pos.x, vert[1].pos.y, vert[2].pos.x, vert[2].pos.y);
-          draw_line(&screen320, vert[2].pos.x, vert[2].pos.y, vert[0].pos.x, vert[0].pos.y);
-        }
+    if (os.key[Key_A].down) r.camera_pos.x -= speed * (F32)os.delta_time;
+    if (os.key[Key_D].down) r.camera_pos.x += speed * (F32)os.delta_time;
+    if (os.key[Key_W].down) {
+      r.camera_forward_velocity = r.camera_direction * speed * (F32)os.delta_time;
+      r.camera_pos = r.camera_pos + r.camera_forward_velocity;
+    }
+    if (os.key[Key_S].down) {
+      r.camera_forward_velocity = r.camera_direction * speed * (F32)os.delta_time;
+      r.camera_pos = r.camera_pos - r.camera_forward_velocity;
+    }
+    if (os.key[Key_R].down) r.camera_pos.y += speed * (F32)os.delta_time;
+    if (os.key[Key_F].down) r.camera_pos.y -= speed * (F32)os.delta_time;
+    U32* p = r.screen320.pixels;
+    for (int y = 0; y < r.screen320.y; y++) {
+      for (int x = 0; x < r.screen320.x; x++) {
+        *p++ = 0x33333333;
       }
     }
-    
+    F32* dp = r.depth320;
+    for (int y = 0; y < r.screen320.y; y++) {
+      for (int x = 0; x < r.screen320.x; x++) {
+        *dp++ = -FLT_MAX;
+      }
+    }
+
+    Mat4 camera_rotation = mat4_rotation_y(r.camera_yaw.x) * mat4_rotation_x(r.camera_yaw.y);
+    r.camera_direction = (camera_rotation * vec4(0,0,1,1)).xyz;
+    Vec3 target = r.camera_pos + r.camera_direction;
+    r.camera = mat4_look_at(r.camera_pos, target, vec3(0, 1, 0));
+    r.projection = mat4_perspective(60.f, (F32)os.screen->x, (F32)os.screen->y, 0.1f, 1000.f);
+    r.transform = mat4_rotation_z(rotation);
+    r.transform = r.transform * mat4_rotation_y(rotation);
+    for (int i = 0; i < obj.mesh.len; i++) {
+      r_draw_mesh(&r, mesh+i, vertices, tex_coords, normals);
+    }
 
     // @Note: Draw 320screen to OS screen
     U32* ptr = os.screen->pixels;
@@ -571,10 +621,31 @@ int main() {
       for (int x = 0; x < os.screen->x; x++) {
         F32 u = (F32)x / (F32)os.screen->x;
         F32 v = (F32)y / (F32)os.screen->y;
-        int tx = (int)(u * screen320.x );
-        int ty = (int)(v * screen320.y );
-        *ptr++ = screen320.pixels[tx + ty * (screen320.x)];
+        int tx = (int)(u * r.screen320.x );
+        int ty = (int)(v * r.screen320.y );
+        *ptr++ = r.screen320.pixels[tx + ty * (r.screen320.x)];
       }
     }
   }
 }
+
+/// ### Resources that helped me build the rasterizer (Might be helpful to you too):
+/// 
+/// * Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
+/// * Series on making a game from scratch(including a 2D software rasterizer(episode ~82) and 3d gpu renderer) by Casey Muratori: https://hero.handmade.network/episode/code#
+/// * Fabian Giessen's "Optimizing Software Occlusion Culling": https://fgiesen.wordpress.com/2013/02/17/optimizing-sw-occlusion-culling-index/
+/// * Fabian Giessen's optimized software renderer: https://github.com/rygorous/intel_occlusion_cull/tree/blog/SoftwareOcclusionCulling
+/// * Fabian Giessen's javascript triangle rasterizer: https://gist.github.com/rygorous/2486101
+/// * Fabian Giessen's C++ triangle rasterizer: https://github.com/rygorous/trirast/blob/master/main.cpp
+/// * Joy's Kenneth lectures about computer graphics: https://www.youtube.com/playlist?list=PL_w_qWAQZtAZhtzPI5pkAtcUVgmzdAP8g
+/// * Joy's Kenneth article on clipping: https://import.cdn.thinkific.com/167815/JoyKennethClipping-200905-175314.pdf
+/// * A bunch of helpful notes and links to resources: https://nlguillemot.wordpress.com/2016/07/10/rasterizer-notes/
+/// * Very nice paid course on making a software rasterizer using a scanline method: https://pikuma.com/courses/learn-3d-computer-graphics-programming
+/// * Reference for obj loader: https://github.com/tinyobjloader/tinyobjloader/blob/master/tiny_obj_loader.h
+/// *
+/// * 
+/// * 
+///
+/// ### To read
+///
+/// * http://ce-publications.et.tudelft.nl/publications/1362_hardware_algorithms_for_tilebased_realtime_rendering.pdf

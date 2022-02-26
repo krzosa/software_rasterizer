@@ -22,12 +22,14 @@
 - [ ] Lightning
   - [x] GLOBAL Ilumination
 - [x] LookAt Camera
-- [ ] FPS Camera
+- [x] FPS Camera
 - [x] Reading OBJ models
+- [ ] Reading more OBJ formats
 - [ ] Reading OBJ .mtl files
-- [ ] Reading complex obj models (sponza)
+- [x] Reading complex obj models (sponza)
 - [ ] Reading PMX files
 - [ ] Rendering multiple objects, queue renderer
+  - [x] Simple function to render a mesh
 - [x] Clipping
   - [x] Triagnle rectangle bound clipping
   - [x] A way of culling Z out triangles
@@ -40,18 +42,40 @@
 - [x] Find cool profilers - ExtraSleepy, Vtune
 - [ ] Optimizations
   - [ ] Inline edge function
+  - [ ] Expand edge functions to more optimized version
+  - [ ] Test 4x2 bitmap layout?
   - [ ] Edge function to integer
   - [ ] Use integer bit operations to figure out if plus. (edge1|edge2|edge3)>=0
-- [ ] SIMD
-- [ ] Multithreading
-- [ ]
+  - [ ] SIMD
+  - [ ] Multithreading
+
 - [ ] Text rendering
 - [ ] Basic UI
 - [ ] Gamma correct and alpha blending
 
+## Clipping
+
+There are 3 clipping stages, 2 clipping stages in 3D space against zfar and znear and 1 clipping
+stage in 2D againts left,bottom,right,top(2D image bounds).
+
+First the triangles get clipped against the zfar plane,
+if a triangle has even one vertex outside the clipping region, the entire triangle gets cut.
+So far I didn't have problems with that. It simplifies the computations and splitting triangles
+on zfar seems like a waste of power.
+
+The second clipping stage is znear plane. Triangles get fully and nicely clipped against znear.
+Every time a triangle gets partially outside the clipping region it gets cut to the znear and
+either one or two new triangles get derived from the old one.
+
+Last clipping stage is performed in the 2D image space. Every triangle has a corresponding AABB
+box. In this box every pixel gets tested to see if it's in the triangle. In this clipping stage
+the box is clipped to the image metrics - 0, 0, width, height.
+
+
 ### Resources that helped me build the rasterizer (Might be helpful to you too):
 
 * Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
+* Series on making a game from scratch(including a 2D software rasterizer(episode ~82) and 3d gpu renderer) by Casey Muratori: https://hero.handmade.network/episode/code#
 * Fabian Giessen's "Optimizing Software Occlusion Culling": https://fgiesen.wordpress.com/2013/02/17/optimizing-sw-occlusion-culling-index/
 * Fabian Giessen's optimized software renderer: https://github.com/rygorous/intel_occlusion_cull/tree/blog/SoftwareOcclusionCulling
 * Fabian Giessen's javascript triangle rasterizer: https://gist.github.com/rygorous/2486101

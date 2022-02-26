@@ -76,7 +76,7 @@ namespace obj {
     }
     else if (is_number(*result.s) || *result.s == '-') {
       result.type = TokenType::number;
-      while (is_number(**data) || **data == '.') {
+      while (is_number(**data) || **data == '.' ||  **data == 'e' || **data == '-') {
         *data += 1;
       }
       result.number = atof(result.s);
@@ -122,14 +122,16 @@ namespace obj {
 
   FN void debug_expect_raw(char** data, TokenType type) {
     char* data_temp = *data;
-    TASSERT(next_token_raw(&data_temp).type == type);
+    Token t = next_token_raw(&data_temp);
+    TASSERT(t.type == type);
   }
 
   // Each face needs to have own material_id, group_id, smoothing ..
   Obj parse(char* data) {
     Obj result = {};
     int smoothing = 0;
-    ObjMesh *mesh = 0;
+    ObjMesh *mesh = result.mesh.push_empty();
+    ZERO_STRUCT(mesh);
     int material_id = -1;
 
     for (;; ) {
@@ -167,10 +169,14 @@ namespace obj {
         else if (string_compare(token.s8, LIT("o"))) {
           Token t = next_token(&data);
           TASSERT(t.type == TokenType::word);
-          mesh = result.mesh.push_empty();
-          ZERO_STRUCT(mesh);
-          U64 len = CLAMP_TOP(t.len, 64);
-          memory_copy(t.s, mesh->name, len);
+          if (mesh->indices.len != 0) {
+            mesh = result.mesh.push_empty();
+            ZERO_STRUCT(mesh);
+          }
+          else {
+            U64 len = CLAMP_TOP(t.len, 64);
+            memory_copy(t.s, mesh->name, len);
+          }
         }
         else if (string_compare(token.s8, LIT("s"))) {
           Token t = next_token(&data);
