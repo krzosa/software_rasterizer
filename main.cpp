@@ -9,15 +9,15 @@
 /// - [x] Culling triangles facing away from camera
 /// - [x] Texture mapping
 /// - [x] Basic linear transformations - rotation, translation, scaling
-/// - [x] Bilinear filtering of textures / subpixel precison
+/// - [x] Bilinear filtering of textures
 /// - [x] Nearest filtering
 /// - [x] Fix the gaps between triangles (it also improved look of triangle edges)
 /// - [ ] Perspective matrix vs simple perspective
 /// - [x] Perspective correct interpolation
 /// - [x] Depth buffer 
 /// - [x] Gamma correct blending - converting to almost linear space
-/// - [x] Alpha blending??
-/// - [x] Premultiplied alpha???
+/// - [x] Alpha blending
+/// - [x] Premultiplied alpha
 /// - [x] Merge with base
 /// - [ ] Lightning
 ///   - [x] GLOBAL Ilumination
@@ -38,7 +38,7 @@
 ///     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
 /// - [ ] Subpixel precision of triangle edges
 /// - [x] Simple profiling tooling
-/// - [ ] Statistics based on profiler data, distribution information
+/// - [x] Statistics based on profiler data, distribution information
 /// - [x] Find cool profilers - ExtraSleepy, Vtune
 /// - [ ] Optimizations
 ///   - [ ] Inline edge function
@@ -403,7 +403,7 @@ FN void r_draw_mesh(R_Render *r, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords
       /// ## Clipping 
       /// 
       /// There are 3 clipping stages, 2 clipping stages in 3D space against zfar and znear and 1 clipping 
-      /// stage in 2D againts left,bottom,right,top(2D image bounds). 
+      /// stage in 2D against left, bottom, right, top(2D image bounds). 
       ///
       /// First the triangles get clipped against the zfar plane, 
       /// if a triangle has even one vertex outside the clipping region, the entire triangle gets cut.
@@ -495,39 +495,7 @@ FN void r_draw_mesh(R_Render *r, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords
       LOCAL_PERSIST B32 profile_flag;
       if (!profile_flag && scope->i > 2000) {
         profile_flag = 1;
-        for (I64 si = 1; si < profile_scopes[ProfileScopeName_draw_triangle].i; si++) {
-          for (I64 sj = 1; sj < profile_scopes[ProfileScopeName_draw_triangle].i; sj++) {
-            if (profile_scopes[ProfileScopeName_draw_triangle].samples[sj] < profile_scopes[ProfileScopeName_draw_triangle].samples[sj - 1]) {
-              F64 temp = profile_scopes[ProfileScopeName_draw_triangle].samples[sj];
-              profile_scopes[ProfileScopeName_draw_triangle].samples[sj] = profile_scopes[ProfileScopeName_draw_triangle].samples[sj-1];
-              profile_scopes[ProfileScopeName_draw_triangle].samples[sj-1] = temp;
-            }
-          }
-        }
-
-        {
-          Scratch scratch;
-          U8 *string_pointer = string_begin(scratch);
-
-          I64 one_past_last = profile_scopes[ProfileScopeName_draw_triangle].i;
-          F64 sum = 0;
-          for (I64 si = 0; si < one_past_last; si++) {
-            sum += scope->samples[si];
-            //string_format(scratch, "%f;", scope->samples[si]);
-          }
-          I64 index25perc = one_past_last / 4 - 1;
-          F64 min = profile_scopes[ProfileScopeName_draw_triangle].samples[0];
-          F64 percentile25 = profile_scopes[ProfileScopeName_draw_triangle].samples[index25perc];
-          F64 median = profile_scopes[ProfileScopeName_draw_triangle].samples[one_past_last / 2 - 1];
-          F64 percentile75 = profile_scopes[ProfileScopeName_draw_triangle].samples[index25perc*3];
-          F64 max = profile_scopes[ProfileScopeName_draw_triangle].samples[one_past_last - 1];
-          F64 avg = sum / scope->i;
-
-          S8 build_name = BUILD_NAME;
-          string_format(scratch, "%s_%s = min:%f 25%%:%f median:%f 75%%:%f max: %f avg:%f\n", build_name, scenario_name, min, percentile25, median, percentile75, max, avg);
-          S8 data = string_end(scratch, string_pointer);
-          os_append_file(LIT("data.txt"), data);
-        }
+        save_profile_data(scope, scenario_name);
         
         
         
@@ -552,9 +520,9 @@ int main() {
   string_push(os.frame_arena, &list, LIT("main.cpp"));
   generate_documentation(list, LIT("README.md"));
 
-  scenario_name = LIT("assets/f22.obj");
+  //scenario_name = LIT("assets/f22.obj");
   //scenario_name = LIT("assets/AnyConv.com__White.obj");
-  //scenario_name = LIT("assets/sponza/sponza.obj");
+  scenario_name = LIT("assets/sponza/sponza.obj");
   Obj obj = load_obj(scenario_name);
   Vec3* vertices = (Vec3 *)obj.vertices.e;
   Vec2* tex_coords = (Vec2*)obj.texture_coordinates.e;
@@ -632,7 +600,7 @@ int main() {
 /// ### Resources that helped me build the rasterizer (Might be helpful to you too):
 /// 
 /// * Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
-/// * Series on making a game from scratch(including a 2D software rasterizer(episode ~82) and 3d gpu renderer) by Casey Muratori: https://hero.handmade.network/episode/code#
+/// * Casey Muratori's series on making a game from scratch(including a 2D software rasterizer(episode ~82) and 3d gpu renderer): https://hero.handmade.network/episode/code#
 /// * Fabian Giessen's "Optimizing Software Occlusion Culling": https://fgiesen.wordpress.com/2013/02/17/optimizing-sw-occlusion-culling-index/
 /// * Fabian Giessen's optimized software renderer: https://github.com/rygorous/intel_occlusion_cull/tree/blog/SoftwareOcclusionCulling
 /// * Fabian Giessen's javascript triangle rasterizer: https://gist.github.com/rygorous/2486101

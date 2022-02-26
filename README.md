@@ -9,15 +9,15 @@
 - [x] Culling triangles facing away from camera
 - [x] Texture mapping
 - [x] Basic linear transformations - rotation, translation, scaling
-- [x] Bilinear filtering of textures / subpixel precison
+- [x] Bilinear filtering of textures
 - [x] Nearest filtering
 - [x] Fix the gaps between triangles (it also improved look of triangle edges)
 - [ ] Perspective matrix vs simple perspective
 - [x] Perspective correct interpolation
 - [x] Depth buffer
 - [x] Gamma correct blending - converting to almost linear space
-- [x] Alpha blending??
-- [x] Premultiplied alpha???
+- [x] Alpha blending
+- [x] Premultiplied alpha
 - [x] Merge with base
 - [ ] Lightning
   - [x] GLOBAL Ilumination
@@ -38,7 +38,7 @@
     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
 - [ ] Subpixel precision of triangle edges
 - [x] Simple profiling tooling
-- [ ] Statistics based on profiler data, distribution information
+- [x] Statistics based on profiler data, distribution information
 - [x] Find cool profilers - ExtraSleepy, Vtune
 - [ ] Optimizations
   - [ ] Inline edge function
@@ -56,7 +56,7 @@
 ## Clipping
 
 There are 3 clipping stages, 2 clipping stages in 3D space against zfar and znear and 1 clipping
-stage in 2D againts left,bottom,right,top(2D image bounds).
+stage in 2D against left, bottom, right, top(2D image bounds).
 
 First the triangles get clipped against the zfar plane,
 if a triangle has even one vertex outside the clipping region, the entire triangle gets cut.
@@ -75,7 +75,7 @@ the box is clipped to the image metrics - 0, 0, width, height.
 ### Resources that helped me build the rasterizer (Might be helpful to you too):
 
 * Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
-* Series on making a game from scratch(including a 2D software rasterizer(episode ~82) and 3d gpu renderer) by Casey Muratori: https://hero.handmade.network/episode/code#
+* Casey Muratori's series on making a game from scratch(including a 2D software rasterizer(episode ~82) and 3d gpu renderer): https://hero.handmade.network/episode/code#
 * Fabian Giessen's "Optimizing Software Occlusion Culling": https://fgiesen.wordpress.com/2013/02/17/optimizing-sw-occlusion-culling-index/
 * Fabian Giessen's optimized software renderer: https://github.com/rygorous/intel_occlusion_cull/tree/blog/SoftwareOcclusionCulling
 * Fabian Giessen's javascript triangle rasterizer: https://gist.github.com/rygorous/2486101
