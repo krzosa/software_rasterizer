@@ -38,7 +38,7 @@
 ///     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
 /// - [ ] Subpixel precision of triangle edges
 /// - [x] Simple profiling tooling
-/// - [x] Statistics based on profiler data, distribution information
+/// - [x] Statistics based on profiler data
 /// - [x] Find cool profilers - ExtraSleepy, Vtune
 /// - [ ] Optimizations
 ///   - [ ] Inline edge function
@@ -49,9 +49,12 @@
 ///   - [ ] SIMD
 ///   - [ ] Multithreading
 ///
-/// - [ ] Text rendering
+/// - [x] Text rendering
 /// - [ ] Basic UI
-/// - [ ] Gamma correct and alpha blending
+/// - [x] Gamma correct alpha blending for rectangles and bitmaps
+/// - [ ] Plotting of profile data
+///    - [x] Simple scatter plot
+/// 
 /// 
 
 
@@ -83,6 +86,8 @@ struct R_Render {
   Vec2 camera_yaw;
   Vec3 camera_target;
   Bitmap img;
+  B32 plot_ready;
+  Bitmap plot;
   Bitmap screen320;
   F32 *depth320;
 };
@@ -95,39 +100,42 @@ GLOBAL bool draw_rects = 0;
 GLOBAL bool draw_wireframe = 0;
 
 FUNCTION
-void draw_rect(Bitmap* dst, F32 X, F32 Y, F32 w, F32 h, U32 color) {
-  int max_x = (int)(MIN(X + w, dst->x) + 0.5f);
-  int max_y = (int)(MIN(Y + h, dst->y) + 0.5f);
-  int min_x = (int)(MAX(0, X) + 0.5f);
-  int min_y = (int)(MAX(0, Y) + 0.5f);
-
-  for (int y = min_y; y < max_y; y++) {
-    for (int x = min_x; x < max_x; x++) {
-      dst->pixels[x + y * dst->x] = color;
-    }
-  }
-}
-
-FUNCTION
-F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
-  F32 result = (vecp1.y - vecp0.y) * (p.x - vecp0.x) - (vecp1.x - vecp0.x) * (p.y - vecp0.y);
-  return result;
-}
-
-FUNCTION
-Vec4 srgb_to_almost_linear(Vec4 a) {
+  Vec4 srgb_to_almost_linear(Vec4 a) {
   Vec4 result = {a.r*a.r, a.g*a.g, a.b*a.b, a.a};
   return result; // @Note: Linear would be to power of 2.2
 }
 
 FUNCTION
-Vec4 almost_linear_to_srgb(Vec4 a) {
+  Vec4 almost_linear_to_srgb(Vec4 a) {
   Vec4 result = { sqrtf(a.r), sqrtf(a.g), sqrtf(a.b), a.a };
   return result;
 }
 
 FUNCTION
-  void draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos) {
+void r_draw_rect(Bitmap* dst, F32 X, F32 Y, F32 w, F32 h, Vec4 color) {
+  int max_x = (int)(MIN(X + w, dst->x) + 0.5f);
+  int max_y = (int)(MIN(Y + h, dst->y) + 0.5f);
+  int min_x = (int)(MAX(0, X) + 0.5f);
+  int min_y = (int)(MAX(0, Y) + 0.5f);
+
+  color = srgb_to_almost_linear(color);
+  for (int y = min_y; y < max_y; y++) {
+    for (int x = min_x; x < max_x; x++) {
+      U32 *dst_pixel = dst->pixels + (x + y * dst->x); 
+      Vec4 dst_color = srgb_to_almost_linear(vec4abgr(*dst_pixel));
+      
+      color.r = color.r + (1-color.a) * dst_color.r;
+      color.g = color.g + (1-color.a) * dst_color.g;
+      color.b = color.b + (1-color.a) * dst_color.b;
+      color.a = color.a + dst_color.a - color.a*dst_color.a;
+      U32 color32 = vec4_to_u32abgr(almost_linear_to_srgb(color));
+      *dst_pixel = color32;
+    }
+  }
+}
+
+FUNCTION
+void r_draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos) {
   I64 minx = (I64)(pos.x + 0.5);
   I64 miny = (I64)(pos.y + 0.5);
   I64 maxx = minx + src->x;
@@ -167,6 +175,44 @@ FUNCTION
       *dst_pixel = color32;
     }
   }
+}
+
+FN Vec4 r_base_string(Bitmap *dst, Font *font, S8 word, Vec2 pos, B32 draw) {
+  Vec2 og_position = pos;
+  F32 max_x = pos.x;
+  for (U64 i = 0; i < word.len; i++) {
+    if (word.str[i] == ' ') {
+      FontGlyph* g = &font->glyphs['_' - '!'];
+      pos.x += g->xadvance;
+      if (pos.x > max_x) max_x = pos.x;
+    }
+    else if (word.str[i] == '\n') {
+      pos.y -= font->line_advance;
+      pos.x = og_position.x;
+    }
+    else {
+      FontGlyph* g = &font->glyphs[word.str[i] - '!'];
+      if(draw) r_draw_bitmap(dst, &g->bitmap, pos - g->bitmap.align);
+      pos.x += g->xadvance;
+      if (pos.x > max_x) max_x = pos.x;
+    }
+  }
+  Vec4 rect = vec4(og_position.x, pos.y, max_x - og_position.x, og_position.y - pos.y + font->line_advance);
+  return rect;
+}
+
+FN Vec4 r_draw_string(Bitmap *dst, Font *font, S8 word, Vec2 pos) {
+  return r_base_string(dst, font, word, pos, true);
+}
+
+FN Vec4 r_get_string_rect(Font *font, S8 word, Vec2 pos) {
+  return r_base_string(0, font, word, pos, false);
+}
+
+FUNCTION
+  F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
+  F32 result = (vecp1.y - vecp0.y) * (p.x - vecp0.x) - (vecp1.x - vecp0.x) * (p.y - vecp0.y);
+  return result;
 }
 
 FUNCTION 
@@ -237,9 +283,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
     }
   }
   if (draw_rects) {
-    draw_rect(dst, p0.x-4, p0.y-4, 8,8, 0x00ff0000);
-    draw_rect(dst, p1.x-4, p1.y-4, 8,8, 0x0000ff00);
-    draw_rect(dst, p2.x-4, p2.y-4, 8,8, 0x000000ff);
+    r_draw_rect(dst, p0.x-4, p0.y-4, 8,8, vec4(1,0,0,1));
+    r_draw_rect(dst, p1.x-4, p1.y-4, 8,8, vec4(0,1,0,1));
+    r_draw_rect(dst, p2.x-4, p2.y-4, 8,8, vec4(0,0,1,1));
   }
   if(os.frame > 60) PROFILE_END(draw_triangle);
 }
@@ -320,9 +366,9 @@ FUNCTION
     }
   }
   if (draw_rects) {
-    draw_rect(dst, p0.x-4, p0.y-4, 8,8, 0x00ff0000);
-    draw_rect(dst, p1.x-4, p1.y-4, 8,8, 0x0000ff00);
-    draw_rect(dst, p2.x-4, p2.y-4, 8,8, 0x000000ff);
+    r_draw_rect(dst, p0.x-4, p0.y-4, 8,8, vec4(1,0,0,1));
+    r_draw_rect(dst, p1.x-4, p1.y-4, 8,8, vec4(0,1,0,1));
+    r_draw_rect(dst, p2.x-4, p2.y-4, 8,8, vec4(0,0,1,1));
   }
 }
 
@@ -362,6 +408,27 @@ Bitmap load_image(const char* path) {
   }
 #endif
   return result;
+}
+
+FN void r_scatter_plot(Bitmap *dst, F64 *data, I64 data_len) {
+  F64 min = FLT_MAX;
+  F64 max = FLT_MIN;
+  F64 step = dst->x / (F64)data_len;
+  for (U32 i = 0; i < data_len; i++) {
+    if (min > data[i]) min = data[i];
+    if (max < data[i]) max = data[i];
+  }
+  F64 diff = max - min;
+  F64 x = 0;
+  for (U32 i = 0; i < data_len; i++) {
+    F64 *p = data + i;
+    *p /= diff;
+    F64 y = *p * dst->y;
+    x += step;
+    r_draw_rect(dst, (F32)x-2, (F32)y-2, 4, 4, vec4(1,0,0,1));
+    //dst->pixels[xi + yi * dst->x] = 0xffff0000;
+  }
+
 }
 
 S8 scenario_name = string_null;
@@ -495,9 +562,9 @@ FN void r_draw_mesh(R_Render *r, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords
       LOCAL_PERSIST B32 profile_flag;
       if (!profile_flag && scope->i > 2000) {
         profile_flag = 1;
-        save_profile_data(scope, scenario_name);
-        
-        
+        save_profile_data(scope, scenario_name, LIT("draw_triangle"));
+        r_scatter_plot(&r->plot, scope->samples, 2000);
+        r->plot_ready = true;
         
       }
 #endif
@@ -512,17 +579,30 @@ FN void r_draw_mesh(R_Render *r, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords
 }
 
 int main() {
-  os.window_size.x = 1920;
-  os.window_size.y = 1080;
+  os.window_size.x = 1280;
+  os.window_size.y = 720;
   os.window_resizable = 1;
   os_init().error_is_fatal();
   S8List list = {};
   string_push(os.frame_arena, &list, LIT("main.cpp"));
   generate_documentation(list, LIT("README.md"));
+  Font font = os_load_font(os.perm_arena, 24, "Arial");
+  for (U32 i = 0; i < font.glyphs_len; i++) {
+    FontGlyph *g = font.glyphs + i;
+    U32 *pointer = g->bitmap.pixels;
+    for (I32 y = 0; y < g->bitmap.y; y++) {
+      for (I32 x = 0; x < g->bitmap.x; x++) {
+        Vec4 color = vec4abgr(*pointer);
+        color.rgb *= color.a;
+        *pointer++ = vec4_to_u32abgr(color);
+      }
+    }
+    
+  }
 
-  //scenario_name = LIT("assets/f22.obj");
+  scenario_name = LIT("assets/f22.obj");
   //scenario_name = LIT("assets/AnyConv.com__White.obj");
-  scenario_name = LIT("assets/sponza/sponza.obj");
+  //scenario_name = LIT("assets/sponza/sponza.obj");
   Obj obj = load_obj(scenario_name);
   Vec3* vertices = (Vec3 *)obj.vertices.e;
   Vec2* tex_coords = (Vec2*)obj.texture_coordinates.e;
@@ -537,11 +617,12 @@ int main() {
   R_Render r = {};
   r.camera_pos = {0,0,-2};
   r.screen320 = {(U32 *)PUSH_SIZE(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
+  r.plot = {(U32 *)PUSH_SIZE(os.perm_arena, 1280*720*sizeof(U32)), 1280, 720};
   r.depth320 = (F32 *)PUSH_SIZE(os.perm_arena, sizeof(F32) * screen_x * screen_y);
   r.img = load_image("assets/bricksx64.png");
   while (os_game_loop()) {
-    r.camera_yaw.x += os.delta_mouse_pos.x * (F32)os.delta_time * 0.2f;
-    r.camera_yaw.y += os.delta_mouse_pos.y * (F32)os.delta_time * 0.2f;
+    r.camera_yaw.x += os.delta_mouse_pos.x * 0.05f;
+    r.camera_yaw.y -= os.delta_mouse_pos.y * 0.05f;
     if (os.key[Key_Escape].pressed) os_quit();
     if (os.key[Key_O].down) rotation += 0.05f;
     if (os.key[Key_P].down) rotation -= 0.05f;
@@ -562,7 +643,7 @@ int main() {
     U32* p = r.screen320.pixels;
     for (int y = 0; y < r.screen320.y; y++) {
       for (int x = 0; x < r.screen320.x; x++) {
-        *p++ = 0x33333333;
+        *p++ = 0x00333333;
       }
     }
     F32* dp = r.depth320;
@@ -582,6 +663,7 @@ int main() {
     for (int i = 0; i < obj.mesh.len; i++) {
       r_draw_mesh(&r, mesh+i, vertices, tex_coords, normals);
     }
+    
 
     // @Note: Draw 320screen to OS screen
     U32* ptr = os.screen->pixels;
@@ -594,6 +676,9 @@ int main() {
         *ptr++ = r.screen320.pixels[tx + ty * (r.screen320.x)];
       }
     }
+    S8 print_string = string_format(os.frame_arena, "FPS:%f dt:%f frame:%u", os.fps, os.delta_time, os.frame);
+    r_draw_string(os.screen, &font, print_string, vec2(0, os.screen->y - font.height));
+    if (r.plot_ready) r_draw_bitmap(os.screen, &r.plot, { 0, 0 });
   }
 }
 

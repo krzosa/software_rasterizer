@@ -22,8 +22,8 @@ GLOBAL ProfileScope profile_scopes[ProfileScopeName_Count];
 }while (0)
 
 
-FN void save_profile_data(ProfileScope *scope, S8 scenario_name) {
-  for (I64 si = 1; si < scope->i; si++) {
+FN void save_profile_data(ProfileScope *scope, S8 scenario_name, S8 scope_name) {
+  /*for (I64 si = 1; si < scope->i; si++) {
     for (I64 sj = 1; sj < scope->i; sj++) {
       if (scope->samples[sj] < scope->samples[sj - 1]) {
         F64 temp = scope->samples[sj];
@@ -31,29 +31,24 @@ FN void save_profile_data(ProfileScope *scope, S8 scenario_name) {
         scope->samples[sj-1] = temp;
       }
     }
-  }
+  }*/
 
   {
     Scratch scratch;
+    scenario_name = string_chop_last_period(scenario_name);
+    scenario_name = string_skip_to_last_slash(scenario_name);
     U8 *string_pointer = string_begin(scratch);
-
-    I64 one_past_last = scope->i;
-    F64 sum = 0;
-    for (I64 si = 0; si < one_past_last; si++) {
-      sum += scope->samples[si];
-      //string_format(scratch, "%f;", scope->samples[si]);
-    }
-    I64 index25perc = one_past_last / 4 - 1;
-    F64 min = scope->samples[0];
-    F64 percentile25 = scope->samples[index25perc];
-    F64 median = scope->samples[one_past_last / 2 - 1];
-    F64 percentile75 = scope->samples[index25perc*3];
-    F64 max = scope->samples[one_past_last - 1];
-    F64 avg = sum / scope->i;
-
     S8 build_name = BUILD_NAME;
-    string_format(scratch, "%s_%s = min:%f 25%%:%f median:%f 75%%:%f max: %f avg:%f\n", build_name, scenario_name, min, percentile25, median, percentile75, max, avg);
+    string_format(scratch, "%s %s\n", build_name, scenario_name);
+    I64 one_past_last = scope->i;
+    for (I64 si = 0; si < one_past_last; si++) {
+      string_format(scratch, "%f\n", scope->samples[si]);
+    }
+
     S8 data = string_end(scratch, string_pointer);
-    os_append_file(LIT("data.txt"), data);
+    Date date = os_date();
+    os_make_dir(LIT("stats"));
+    S8 name = string_format(scratch, "stats/%s_%s_%s_%u_%u_%u_%u_%u_%u.txt", scope_name, build_name, scenario_name, date.year, date.month, date.day, date.hour, date.minute, date.second);
+    os_append_file(name, data);
   }
 }

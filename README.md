@@ -38,7 +38,7 @@
     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
 - [ ] Subpixel precision of triangle edges
 - [x] Simple profiling tooling
-- [x] Statistics based on profiler data, distribution information
+- [x] Statistics based on profiler data
 - [x] Find cool profilers - ExtraSleepy, Vtune
 - [ ] Optimizations
   - [ ] Inline edge function
@@ -49,9 +49,12 @@
   - [ ] SIMD
   - [ ] Multithreading
 
-- [ ] Text rendering
+- [x] Text rendering
 - [ ] Basic UI
-- [ ] Gamma correct and alpha blending
+- [x] Gamma correct alpha blending for rectangles and bitmaps
+- [ ] Plotting of profile data
+   - [x] Simple scatter plot
+
 
 ## Clipping
 

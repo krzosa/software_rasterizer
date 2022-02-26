@@ -1,6 +1,7 @@
 .vs/
 x64/
 assets/
+stats/
 
 data.txt
 *.sln
