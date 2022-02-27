@@ -33,22 +33,20 @@ FN void save_profile_data(ProfileScope *scope, S8 scenario_name, S8 scope_name) 
     }
   }*/
 
-  {
-    Scratch scratch;
-    scenario_name = string_chop_last_period(scenario_name);
-    scenario_name = string_skip_to_last_slash(scenario_name);
-    U8 *string_pointer = string_begin(scratch);
-    S8 build_name = BUILD_NAME;
-    string_format(scratch, "%s %s\n", build_name, scenario_name);
-    I64 one_past_last = scope->i;
-    for (I64 si = 0; si < one_past_last; si++) {
-      string_format(scratch, "%f\n", scope->samples[si]);
-    }
-
-    S8 data = string_end(scratch, string_pointer);
-    Date date = os_date();
-    os_make_dir(LIT("stats"));
-    S8 name = string_format(scratch, "stats/%s_%s_%s_%u_%u_%u_%u_%u_%u.txt", scope_name, build_name, scenario_name, date.year, date.month, date.day, date.hour, date.minute, date.second);
-    os_append_file(name, data);
+  Scratch scratch;
+  scenario_name = string_chop_last_period(scenario_name);
+  scenario_name = string_skip_to_last_slash(scenario_name);
+  U8 *string_pointer = string_begin(scratch);
+  S8 build_name = BUILD_NAME;
+  string_format(scratch, "%s %s\n", build_name, scenario_name);
+  I64 one_past_last = scope->i;
+  for (I64 si = 0; si < one_past_last; si++) {
+    string_format(scratch, "%f\n", scope->samples[si]);
   }
+
+  S8 data = string_end(scratch, string_pointer);
+  Date date = os_date();
+  os_make_dir(LIT("stats"));
+  S8 name = string_format(scratch, "stats/%s_%s_%s_%u_%u_%u_%u_%u_%u.txt", scope_name, build_name, scenario_name, date.year, date.month, date.day, date.hour, date.minute, date.second);
+  os_append_file(name, data);
 }

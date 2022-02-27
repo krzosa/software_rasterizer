@@ -75,6 +75,7 @@ box. In this box every pixel gets tested to see if it's in the triangle. In this
 the box is clipped to the image metrics - 0, 0, width, height.
 
 
+
 ### Resources that helped me build the rasterizer (Might be helpful to you too):
 
 * Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
