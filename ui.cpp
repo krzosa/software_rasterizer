@@ -170,7 +170,5 @@ FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
       } break;
       INVALID_DEFAULT_CASE;
     }
-
-    
   }
 }

@@ -25,8 +25,11 @@
 /// - [x] FPS Camera
 /// - [x] Reading OBJ models
 /// - [ ] Reading more OBJ formats
-/// - [ ] Reading OBJ .mtl files
+/// - [x] Reading OBJ .mtl files
+/// - [x] Loading materials
+/// - [x] Rendering textures obj models
 /// - [x] Reading complex obj models (sponza)
+/// - [ ] Fix sponza uv coordinates
 /// - [ ] Reading PMX files
 /// - [ ] Rendering multiple objects, queue renderer
 ///   - [x] Simple function to render a mesh
@@ -92,8 +95,8 @@ struct R_Render {
   F32 *depth320;
 };
 
-#include "obj_parser.cpp"
 #include "stb_image.h"
+#include "obj_parser.cpp"
 #include <float.h>
 
 GLOBAL B32 draw_rects = 0;
@@ -291,6 +294,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
         F32 v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
         u /= interpolated_w;
         v /= interpolated_w;
+        u = CLAMP(0, u, 1);
+        v = CLAMP(0, v, 1);
+        if(u > 1 || v > 1 || u < 0 || v < 0) continue;
         // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
         // but why waste an instruction, the smaller the depth value the farther the object
         F32* depth = depth_buffer + (x + y * dst->x);
@@ -411,26 +417,6 @@ FUNCTION
   }
 }
 
-FUNCTION
-Bitmap load_image(const char* path) {
-  int x, y, n;
-  unsigned char* data = stbi_load(path, &x, &y, &n, 4);
-  Bitmap result = { (U32*)data, x, y };
-#if PREMULTIPLIED_ALPHA_BLENDING
-  U32 *p = result.pixels;
-  for (int Y = 0; Y < y; Y++) {
-    for (int X = 0; X < x; X++) {
-      Vec4 color = vec4abgr(*p);
-      color.r *= color.a;
-      color.g *= color.a;
-      color.b *= color.a;
-      *p++ = vec4_to_u32abgr(color);
-    }
-  }
-#endif
-  return result;
-}
-
 FN void r_scatter_plot(Bitmap *dst, F64 *data, I64 data_len) {
   F64 min = F32MAX;
   F64 max = FLT_MIN;
@@ -453,9 +439,14 @@ FN void r_scatter_plot(Bitmap *dst, F64 *data, I64 data_len) {
 }
 
 S8 scenario_name = string_null;
-FN void r_draw_mesh(R_Render *r, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
+FN void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
   for (int i = 0; i < mesh->indices.len; i++) {
     ObjIndex *index = mesh->indices.e + i;
+    OBJMaterial *material = materials + index->material_id;
+    Bitmap *image = &material->texture_ambient;
+    if(image->pixels == 0) {
+      image = &r->img;
+    }
     R_Vertex vert[] = {  
       {
         vertices[index->vertex[0] - 1],
@@ -572,10 +563,9 @@ FN void r_draw_mesh(R_Render *r, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords
         in[j].pos.y += r->screen320.y / 2;
       }
 
-      
-      draw_triangle_nearest(&r->screen320, r->depth320, &r->img, light, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex);
+      draw_triangle_nearest(&r->screen320, r->depth320, image, light, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex);
       if (in_count > 3) {
-        draw_triangle_nearest(&r->screen320, r->depth320, &r->img, light, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex);
+        draw_triangle_nearest(&r->screen320, r->depth320, image, light, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex);
       }
         
         
@@ -618,17 +608,17 @@ int main() {
     
   }
 
-  scenario_name = LIT("assets/f22.obj");
+  // scenario_name = LIT("assets/f22.obj");
   //scenario_name = LIT("assets/cube.obj");
   //scenario_name = LIT("assets/AnyConv.com__White.obj");
-  //scenario_name = LIT("assets/sponza/sponza.obj");
-  Obj obj = load_obj(scenario_name);
+  scenario_name = LIT("assets/sponza/sponza.obj");
+  Obj obj = load_obj(os.perm_arena, scenario_name);
   Vec3* vertices = (Vec3 *)obj.vertices.e;
   Vec2* tex_coords = (Vec2*)obj.texture_coordinates.e;
   Vec3 *normals = (Vec3 *)obj.normals.e;
   ObjMesh *mesh = obj.mesh.e;
 
-  F32 speed = 5.f;
+  F32 speed = 100.f;
   F32 rotation = 0;
 
   int screen_x = 320;
@@ -638,7 +628,7 @@ int main() {
   r.screen320 = {(U32 *)PUSH_SIZE(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   r.plot = {(U32 *)PUSH_SIZE(os.perm_arena, 1280*720*sizeof(U32)), 1280, 720};
   r.depth320 = (F32 *)PUSH_SIZE(os.perm_arena, sizeof(F32) * screen_x * screen_y);
-  r.img = load_image("assets/cat.png");
+  r.img = load_image("assets/bricksx64.png");
 
   /* @Note: Transparent texture */ { 
 #if 0
@@ -712,7 +702,7 @@ int main() {
     r.transform = mat4_rotation_z(rotation);
     r.transform = r.transform * mat4_rotation_y(rotation);
     for (int i = 0; i < obj.mesh.len; i++) {
-      r_draw_mesh(&r, mesh+i, vertices, tex_coords, normals);
+      r_draw_mesh(&r, obj.materials.e, mesh+i, vertices, tex_coords, normals);
     }
     
 

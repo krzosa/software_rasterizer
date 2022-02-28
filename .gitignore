@@ -4,6 +4,12 @@ assets/
 stats/
 
 data.txt
+*.ilk
+*.exp
+*.exe
+*.lib
+*.pdb
 *.sln
 *.vcxproj*
 *.rdbg
+*.sublime*

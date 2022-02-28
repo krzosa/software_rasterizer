@@ -38,12 +38,52 @@ struct ObjMesh {
   DynamicArray<ObjIndex> indices;
 };
 
+struct OBJMaterial {
+  char name[64];
+  U32  name_len;
+  Bitmap texture_ambient; // map_Ka
+  Bitmap texture_diffuse; // map_Kd
+  Bitmap texture_dissolve; // map_d
+  Bitmap texture_displacment; // map_Disp
+  F32 non_transparency; // d
+  F32 transparency; // Tr
+  F32 optical_density; // Ni
+  F32 shininess; // Ns
+  I32 illumination_model; // illum 
+  Vec3 ambient_color; // Ka
+  Vec3 diffuse_color; // Kd
+  Vec3 specular_color; // Ks
+};
+
 struct Obj {
   DynamicArray<Vec3> vertices;
   DynamicArray<Vec2> texture_coordinates;
   DynamicArray<Vec3> normals;
   DynamicArray<ObjMesh> mesh;
+  DynamicArray<OBJMaterial> materials;
 };
+
+FUNCTION
+Bitmap load_image(const char* path) {
+  int x, y, n;
+  unsigned char* data = stbi_load(path, &x, &y, &n, 4);
+  Bitmap result = { (U32*)data, x, y };
+#if PREMULTIPLIED_ALPHA_BLENDING
+  if(data) {
+    U32 *p = result.pixels;
+    for (int Y = 0; Y < y; Y++) {
+      for (int X = 0; X < x; X++) {
+        Vec4 color = vec4abgr(*p);
+        color.r *= color.a;
+        color.g *= color.a;
+        color.b *= color.a;
+        *p++ = vec4_to_u32abgr(color);
+      }
+    }  
+  }
+#endif
+  return result;
+}
 
 namespace obj {
   enum class TokenType {
@@ -62,7 +102,7 @@ namespace obj {
     };
   };
 
-  FN Token next_token_raw(char** data) {
+  FUNCTION Token next_token_raw(char** data) {
     Token result = {};
     result.s = *data;
     *data += 1;
@@ -101,7 +141,7 @@ namespace obj {
     return result;
   }
 
-  FN Token next_token(char** data) {
+  FUNCTION Token next_token(char** data) {
     Token result;
     do {
       result = next_token_raw(data);
@@ -109,25 +149,91 @@ namespace obj {
     return result;
   }
 
-  FN double expect_number(char** data) {
+  FUNCTION double expect_number(char** data) {
     Token t = next_token(data);
     TASSERT(t.type == TokenType::number); // @Todo: Error handling, error flag
     return t.number;
   }
 
-  FN void expect_token(char** data, char token) {
+  FUNCTION void expect_token(char** data, char token) {
     Token t = next_token(data);
     TASSERT(t.type == (TokenType)token); // @Todo: Error handling, error flag
   }
 
-  FN void debug_expect_raw(char** data, TokenType type) {
+  FUNCTION void debug_expect_raw(char** data, TokenType type) {
     char* data_temp = *data;
     Token t = next_token_raw(&data_temp);
     TASSERT(t.type == type);
   }
 
-  // Each face needs to have own material_id, group_id, smoothing ..
-  Obj parse(char* data) {
+  FUNCTION void parse_mtl(Arena *arena, Obj* obj, S8 path_obj_folder, S8 mtl_file) {
+    Scratch scratch;
+    char *data = (char *)mtl_file.str;
+    OBJMaterial *m = 0;
+    for (;;) {
+      Token token = next_token(&data);
+      if (token.type == TokenType::end) break;
+      else if (token.type == TokenType::word) {
+        if (string_compare(token.s8, LIT("newmtl"))) {
+          token = next_token(&data);
+          m = obj->materials.push_empty();
+          ZERO_STRUCT(m);
+          m->name_len = CLAMP_TOP(token.len, 64);
+          memory_copy(token.s8.str, m->name, m->name_len);
+        }
+        else if (string_compare(token.s8, LIT("Ns"))) {
+          m->shininess = expect_number(&data);
+        }
+        else if (string_compare(token.s8, LIT("Ka"))) {
+          m->ambient_color.x = expect_number(&data);
+          m->ambient_color.y = expect_number(&data);
+          m->ambient_color.z = expect_number(&data);
+        }
+        else if (string_compare(token.s8, LIT("Kd"))) {
+          m->diffuse_color.x = expect_number(&data);
+          m->diffuse_color.y = expect_number(&data);
+          m->diffuse_color.z = expect_number(&data);
+        }
+        else if (string_compare(token.s8, LIT("Ks"))) {
+          m->specular_color.x = expect_number(&data);
+          m->specular_color.y = expect_number(&data);
+          m->specular_color.z = expect_number(&data);
+        }
+        else if (string_compare(token.s8, LIT("Ni"))) {
+          m->optical_density = expect_number(&data);
+        }
+        else if (string_compare(token.s8, LIT("d"))) {
+          m->non_transparency = expect_number(&data);
+        }
+        else if (string_compare(token.s8, LIT("illum"))) {
+          m->illumination_model = (I32)expect_number(&data);
+        }
+        else if (string_compare(token.s8, LIT("map_Kd"))) {
+          Token t = next_token(&data);
+          S8 path = string_format(scratch, "%s/%s\0", path_obj_folder, t.s8);
+          m->texture_diffuse = load_image((const char *)path.str);
+        }
+        else if (string_compare(token.s8, LIT("map_Ka"))) {
+          Token t = next_token(&data);
+          S8 path = string_format(scratch, "%s/%s\0", path_obj_folder, t.s8);
+          m->texture_ambient = load_image((const char *)path.str);
+        }
+        else if (string_compare(token.s8, LIT("map_d"))) {
+          Token t = next_token(&data);
+          S8 path = string_format(scratch, "%s/%s\0", path_obj_folder, t.s8);
+          m->texture_dissolve = load_image((const char *)path.str);
+        }
+        else if (string_compare(token.s8, LIT("map_Disp"))) {
+          Token t = next_token(&data);
+          S8 path = string_format(scratch, "%s/%s\0", path_obj_folder, t.s8);
+          m->texture_displacment = load_image((const char *)path.str);
+        }
+      }
+    }
+  }
+
+  FUNCTION Obj parse(Arena *arena, char* data, S8 path_obj_folder) {
+    Scratch mtl_scratch;
     Obj result = {};
     int smoothing = 0;
     ObjMesh *mesh = result.mesh.push_empty();
@@ -158,13 +264,23 @@ namespace obj {
           norm->z = (float)expect_number(&data);
           debug_expect_raw(&data, TokenType::whitespace);
         }
-        else if (string_compare(token.s8, LIT("mtlib"))) {
+        else if (string_compare(token.s8, LIT("mtllib"))) {
           Token t = next_token(&data);
-          TASSERT(t.type == TokenType::word);
+          S8 path = string_format(mtl_scratch, "%s/%s", path_obj_folder, t.s8);
+          S8 mtl_file = os_read_file(mtl_scratch, path).error_is_fatal();
+          PUSH_SIZE(mtl_scratch, 1);
+          parse_mtl(arena, &result, path_obj_folder, mtl_file);
         }
         else if (string_compare(token.s8, LIT("usemtl"))) {
           Token t = next_token(&data);
           TASSERT(t.type == TokenType::word);
+          for(U64 i = 0; i < result.materials.len; i++) {
+            OBJMaterial *m = result.materials.e + i;
+            if(string_compare(string_make((U8 *)m->name, m->name_len), t.s8)) {
+              material_id = i;
+              break;
+            }
+          }
         }
         else if (string_compare(token.s8, LIT("o"))) {
           Token t = next_token(&data);
@@ -227,7 +343,7 @@ namespace obj {
     return result;
   }
 
-  FN void test_lex() {
+  FUNCTION void test_lex() {
     const char* d = "v 0.885739 0.001910 -0.380334";
     char* dd = (char *)d;
     TASSERT(next_token(&dd).type == TokenType::word);
@@ -250,11 +366,11 @@ namespace obj {
   }
 }
 
-FUNCTION
-Obj load_obj(S8 file) {
+FUNCTION Obj load_obj(Arena *arena, S8 file) {
   Scratch scratch;
   S8 data = os_read_file(scratch, file).error_is_fatal();
   PUSH_SIZE(scratch, 1);
-  Obj result = obj::parse((char *)data.str);
+  S8 path = string_chop_last_slash(file);
+  Obj result = obj::parse(arena, (char *)data.str, path);
   return result;
 }
