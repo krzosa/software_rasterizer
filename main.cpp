@@ -21,6 +21,9 @@
 /// - [x] Merge with base
 /// - [ ] Lightning
 ///   - [x] GLOBAL Ilumination
+///   - [ ] Phong
+///   - [ ] Use all materials from OBJ
+///   - [ ] Point light
 /// - [x] LookAt Camera
 /// - [x] FPS Camera
 /// - [x] Reading OBJ models
@@ -48,7 +51,7 @@
 ///   - [ ] Expand edge functions to more optimized version
 ///   - [ ] Test 4x2 bitmap layout?
 ///   - [ ] Edge function to integer
-///   - [ ] Use integer bit operations to figure out if plus. (edge1|edge2|edge3)>=0
+///   - [ ] Use integer bit operations to figure out if plus. (edge0|edge1|edge2)>=0
 ///   - [ ] SIMD
 ///   - [ ] Multithreading
 ///
@@ -81,8 +84,6 @@ struct R_Render {
   Mat4 projection;
   Mat4 transform;
   
-
-  
   Vec3 camera_pos;
   Vec3 camera_direction;
   Vec3 camera_forward_velocity;
@@ -100,15 +101,17 @@ struct R_Render {
 #include <float.h>
 
 GLOBAL B32 draw_rects = 0;
+GLOBAL F32 zfar_value = 100000.f;
+GLOBAL F32 light_rotation = 0;
 
 FUNCTION
-  Vec4 srgb_to_almost_linear(Vec4 a) {
+Vec4 srgb_to_almost_linear(Vec4 a) {
   Vec4 result = {a.r*a.r, a.g*a.g, a.b*a.b, a.a};
   return result; // @Note: Linear would be to power of 2.2
 }
 
 FUNCTION
-  Vec4 almost_linear_to_srgb(Vec4 a) {
+Vec4 almost_linear_to_srgb(Vec4 a) {
   Vec4 result = { sqrtf(a.r), sqrtf(a.g), sqrtf(a.b), a.a };
   return result;
 }
@@ -225,7 +228,8 @@ void r_draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos, Vec2 size=vec2(F32MAX, F3
   
 }
 
-FN Vec4 r_base_string(Bitmap *dst, Font *font, S8 word, Vec2 pos, B32 draw) {
+FUNCTION
+Vec4 r_base_string(Bitmap *dst, Font *font, S8 word, Vec2 pos, B32 draw) {
   Vec2 og_position = pos;
   F32 max_x = pos.x;
   for (U64 i = 0; i < word.len; i++) {
@@ -249,16 +253,18 @@ FN Vec4 r_base_string(Bitmap *dst, Font *font, S8 word, Vec2 pos, B32 draw) {
   return rect;
 }
 
-FN Vec4 r_draw_string(Bitmap *dst, Font *font, S8 word, Vec2 pos) {
+FUNCTION
+Vec4 r_draw_string(Bitmap *dst, Font *font, S8 word, Vec2 pos) {
   return r_base_string(dst, font, word, pos, true);
 }
 
-FN Vec4 r_get_string_rect(Font *font, S8 word, Vec2 pos) {
+FUNCTION
+Vec4 r_get_string_rect(Font *font, S8 word, Vec2 pos) {
   return r_base_string(0, font, word, pos, false);
 }
 
 FUNCTION
-  F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
+F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
   F32 result = (vecp1.y - vecp0.y) * (p.x - vecp0.x) - (vecp1.x - vecp0.x) * (p.y - vecp0.y);
   return result;
 }
@@ -277,26 +283,53 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
   I64 max_x = (I64)MIN(dst->x, ceil(max_x1));
   I64 max_y = (I64)MIN(dst->y, ceil(max_y1));
 
-  F32 area = edge_function(p0, p1, p2);
+  F32 dy10 = (p1.y - p0.y);
+  F32 dy21 = (p2.y - p1.y);
+  F32 dy02 = (p0.y - p2.y);
+
+  F32 dx10 = (p1.x - p0.x);
+  F32 dx21 = (p2.x - p1.x);
+  F32 dx02 = (p0.x - p2.x);
+
+  F32 C0 = dy10 * (p0.x) - dx10 * (p0.y);
+  F32 C1 = dy21 * (p1.x) - dx21 * (p1.y);
+  F32 C2 = dy02 * (p2.x) - dx02 * (p2.y);
+
+  F32 Cy0 = dy10 * min_x - dx10 * min_y - C0;
+  F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
+  F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
+
+  U32 *destination = dst->pixels + dst->x*min_y;
+  F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   for (I64 y = min_y; y < max_y; y++) {
+    F32 Cx0 = Cy0;
+    F32 Cx1 = Cy1;
+    F32 Cx2 = Cy2;
     for (I64 x = min_x; x < max_x; x++) {
-      F32 edge1 = edge_function(p0, p1, { (F32)x,(F32)y });
-      F32 edge2 = edge_function(p1, p2, { (F32)x,(F32)y });
-      F32 edge3 = edge_function(p2, p0, { (F32)x,(F32)y });
+      F32 edge0 = Cx0;
+      F32 edge1 = Cx1;
+      F32 edge2 = Cx2;
 
-      if (edge1 >= 0 && edge2 >= 0 && edge3 >= 0) {
-        F32 w1 = edge2 / area;
-        F32 w2 = edge3 / area;
-        F32 w3 = edge1 / area;
+      if (Cx0 >= 0 && Cx1 >= 0 && Cx2 >= 0) {
+        F32 w1 = Cx1 / area;
+        F32 w2 = Cx2 / area;
+        F32 w3 = Cx0 / area;
         F32 interpolated_w = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
-
         F32 u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
         F32 v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
         u /= interpolated_w;
         v /= interpolated_w;
-        u = CLAMP(0, u, 1);
-        v = CLAMP(0, v, 1);
-        if(u > 1 || v > 1 || u < 0 || v < 0) continue;
+        u = fmodf(u, 1.f);
+        v = fmodf(v, 1.f);
+        if(u < 0) {
+          u = 1 + u;
+        }
+        if(v < 0) {
+          v = 1 + v; 
+        }
+
+        // u = CLAMP(0, u, 1);
+        // v = CLAMP(0, v, 1);
         // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
         // but why waste an instruction, the smaller the depth value the farther the object
         F32* depth = depth_buffer + (x + y * dst->x);
@@ -309,7 +342,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
           F32 udiff = u - (F32)ui;
           F32 vdiff = v - (F32)vi;
           // Origin UV (0,0) is in bottom left
-          U32 *dst_pixel = dst->pixels + (x + y * dst->x);
+          U32 *dst_pixel = destination + x;
           U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
 
 #if PREMULTIPLIED_ALPHA_BLENDING
@@ -328,7 +361,14 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
           *dst_pixel = color32;
         }
       }
+      Cx0 += dy10;
+      Cx1 += dy21;
+      Cx2 += dy02;
     }
+    Cy0 -= dx10;
+    Cy1 -= dx21;
+    Cy2 -= dx02;
+    destination += dst->x;
   }
   if (draw_rects) {
     r_draw_rect(dst, p0.x-4, p0.y-4, 8,8, vec4(1,0,0,1));
@@ -339,7 +379,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
 }
 
 FUNCTION 
-  void draw_triangle_subpixel(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 light,
+void draw_triangle_subpixel(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 light,
   Vec4 p0,   Vec4 p1,   Vec4 p2,
   Vec2 tex0, Vec2 tex1, Vec2 tex2) {
   F32 min_x1 = (F32)(MIN(p0.x, MIN(p1.x, p2.x)));
@@ -354,14 +394,14 @@ FUNCTION
   F32 area = edge_function(p0, p1, p2);
   for (I64 y = min_y; y < max_y; y++) {
     for (I64 x = min_x; x < max_x; x++) {
-      F32 edge1 = edge_function(p0, p1, { (F32)x,(F32)y });
-      F32 edge2 = edge_function(p1, p2, { (F32)x,(F32)y });
-      F32 edge3 = edge_function(p2, p0, { (F32)x,(F32)y });
+      F32 edge0 = edge_function(p0, p1, { (F32)x,(F32)y });
+      F32 edge1 = edge_function(p1, p2, { (F32)x,(F32)y });
+      F32 edge2 = edge_function(p2, p0, { (F32)x,(F32)y });
 
-      if (edge1 >= 0 && edge2 >= 0 && edge3 >= 0) {
-        F32 w1 = edge2 / area;
-        F32 w2 = edge3 / area;
-        F32 w3 = edge1 / area;
+      if (edge0 >= 0 && edge1 >= 0 && edge2 >= 0) {
+        F32 w1 = edge1 / area;
+        F32 w2 = edge2 / area;
+        F32 w3 = edge0 / area;
         F32 interpolated_w = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
 
         F32 u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
@@ -417,7 +457,8 @@ FUNCTION
   }
 }
 
-FN void r_scatter_plot(Bitmap *dst, F64 *data, I64 data_len) {
+FUNCTION
+void r_scatter_plot(Bitmap *dst, F64 *data, I64 data_len) {
   F64 min = F32MAX;
   F64 max = FLT_MIN;
   F64 step = dst->x / (F64)data_len;
@@ -439,7 +480,8 @@ FN void r_scatter_plot(Bitmap *dst, F64 *data, I64 data_len) {
 }
 
 S8 scenario_name = string_null;
-FN void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
+FUNCTION
+void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
   for (int i = 0; i < mesh->indices.len; i++) {
     ObjIndex *index = mesh->indices.e + i;
     OBJMaterial *material = materials + index->material_id;
@@ -475,10 +517,9 @@ FN void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *ve
     Vec3 p0_to_p1 = vert[1].pos - vert[0].pos;
     Vec3 p0_to_p2 = vert[2].pos - vert[0].pos;
     Vec3 normal = normalize(cross(p0_to_p1, p0_to_p2));
-    Vec3 light_direction = mat4_rotation_y(45) * vec3(0, 0, 1);
+    Vec3 light_direction =  mat4_rotation_x(light_rotation) * vec3(0, 0, 1);
     F32 light = -dot(normal, light_direction);
     light = CLAMP(0.05f, light, 1.f);
-    light = 1;
     if (dot(normal, p0_to_camera) > 0) { //@Note: Backface culling
       /// ## Clipping 
       /// 
@@ -502,7 +543,7 @@ FN void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *ve
       // @Note: Zfar
       B32 vertex_is_outside = false;
       Vec3 zfar_normal = vec3(0, 0, -1);
-      Vec3 zfar_pos = vec3(0, 0, 10000.f);
+      Vec3 zfar_pos = vec3(0, 0, zfar_value);
       for (I32 j = 0; j < 3; j++) {
         // @Note: Camera
         vert[j].pos = r->camera * vert[j].pos;
@@ -555,14 +596,14 @@ FN void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *ve
         in[j].pos = r->projection * in[j].pos;
         in[j].pos.x = in[j].pos.x / in[j].pos.w;
         in[j].pos.y = in[j].pos.y / in[j].pos.w;
-        in[j].pos.z = in[j].pos.z / in[j].pos.w;
+        // in[j].pos.z = in[j].pos.z / in[j].pos.w;
         //@Note: To pixel space
         in[j].pos.x *= r->screen320.x / 2;
         in[j].pos.y *= r->screen320.y / 2;
         in[j].pos.x += r->screen320.x / 2;
         in[j].pos.y += r->screen320.y / 2;
       }
-
+      
       draw_triangle_nearest(&r->screen320, r->depth320, image, light, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex);
       if (in_count > 3) {
         draw_triangle_nearest(&r->screen320, r->depth320, image, light, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex);
@@ -608,7 +649,7 @@ int main() {
     
   }
 
-  // scenario_name = LIT("assets/f22.obj");
+  //scenario_name = LIT("assets/f22.obj");
   //scenario_name = LIT("assets/cube.obj");
   //scenario_name = LIT("assets/AnyConv.com__White.obj");
   scenario_name = LIT("assets/sponza/sponza.obj");
@@ -621,8 +662,8 @@ int main() {
   F32 speed = 100.f;
   F32 rotation = 0;
 
-  int screen_x = 320;
-  int screen_y = 180;
+  int screen_x = 320*2;
+  int screen_y = 180*2;
   R_Render r = {};
   r.camera_pos = {0,0,-2};
   r.screen320 = {(U32 *)PUSH_SIZE(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
@@ -656,7 +697,7 @@ int main() {
     UI_LABEL(&frame_data),
   };
   UI ui = ui_make(os.perm_arena, setup, ARRAY_CAP(setup));
-  B32 ui_mouse_lock = true;
+  B32 ui_mouse_lock = true; 
 
   while (os_game_loop()) {
     if (ui_mouse_lock == false) {
@@ -664,10 +705,13 @@ int main() {
       r.camera_yaw.y -= os.delta_mouse_pos.y * 0.01f;
     }
     if (os.key[Key_Escape].pressed) os_quit();
-    if (os.key[Key_O].down) rotation += 0.05f;
-    if (os.key[Key_P].down) rotation -= 0.05f;
+    if (os.key[Key_O].down) light_rotation += 0.05f;
+    if (os.key[Key_P].down) light_rotation -= 0.05f;
     if (os.key[Key_F1].pressed) draw_rects = !draw_rects;
-    if (os.key[Key_F2].pressed) ui_mouse_lock = !ui_mouse_lock;
+    if (os.key[Key_F2].pressed) {
+      ui_mouse_lock = !ui_mouse_lock;
+      os_show_cursor(!os.cursor_visible);
+    }
     if (os.key[Key_A].down) r.camera_pos.x -= speed * (F32)os.delta_time;
     if (os.key[Key_D].down) r.camera_pos.x += speed * (F32)os.delta_time;
     if (os.key[Key_W].down) {
@@ -698,7 +742,7 @@ int main() {
     r.camera_direction = (camera_rotation * vec4(0,0,1,1)).xyz;
     Vec3 target = r.camera_pos + r.camera_direction;
     r.camera = mat4_look_at(r.camera_pos, target, vec3(0, 1, 0));
-    r.projection = mat4_perspective(60.f, (F32)os.screen->x, (F32)os.screen->y, 0.1f, 1000.f);
+    r.projection = mat4_perspective(60.f, (F32)os.screen->x, (F32)os.screen->y, 1.f, zfar_value);
     r.transform = mat4_rotation_z(rotation);
     r.transform = r.transform * mat4_rotation_y(rotation);
     for (int i = 0; i < obj.mesh.len; i++) {
@@ -719,8 +763,6 @@ int main() {
     }
     ui_end_frame(os.screen, &ui, &font);
     frame_data = string_format(os.frame_arena, "FPS:%f dt:%f frame:%u", os.fps, os.delta_time, os.frame);
-    /*r_draw_string(os.screen, &font, print_string, vec2(0, os.screen->y - font.height));
-    if (r.plot_ready) r_draw_bitmap(os.screen, &r.plot, { 0, 0 });*/
   }
 }
 

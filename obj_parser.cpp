@@ -255,6 +255,20 @@ namespace obj {
           Vec2 *tex = result.texture_coordinates.push_empty();
           tex->x = (float)expect_number(&data);
           tex->y = (float)expect_number(&data);
+          
+          // tex->y = fmodf(tex->y, 1.f);
+          // if(tex->x < 0) {
+          //   tex->x = 1 - fmodf(ABS(tex->x), 1.f);
+          // }
+          // else {
+          //   tex->x = fmodf(tex->x, 1.f);  
+          // }
+          // if(tex->y < 0) {
+          //   tex->y = 1 - fmodf(ABS(tex->y), 1.f);
+          // }
+          // else {
+          //   tex->y = fmodf(tex->y, 1.f);
+          // }
           debug_expect_raw(&data, TokenType::whitespace);
         }
         else if (string_compare(token.s8, LIT("vn"))) {

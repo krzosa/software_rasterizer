@@ -21,12 +21,18 @@
 - [x] Merge with base
 - [ ] Lightning
   - [x] GLOBAL Ilumination
+  - [ ] Phong
+  - [ ] Use all materials from OBJ
+  - [ ] Point light
 - [x] LookAt Camera
 - [x] FPS Camera
 - [x] Reading OBJ models
 - [ ] Reading more OBJ formats
-- [ ] Reading OBJ .mtl files
+- [x] Reading OBJ .mtl files
+- [x] Loading materials
+- [x] Rendering textures obj models
 - [x] Reading complex obj models (sponza)
+- [ ] Fix sponza uv coordinates
 - [ ] Reading PMX files
 - [ ] Rendering multiple objects, queue renderer
   - [x] Simple function to render a mesh
@@ -45,7 +51,7 @@
   - [ ] Expand edge functions to more optimized version
   - [ ] Test 4x2 bitmap layout?
   - [ ] Edge function to integer
-  - [ ] Use integer bit operations to figure out if plus. (edge1|edge2|edge3)>=0
+  - [ ] Use integer bit operations to figure out if plus. (edge0|edge1|edge2)>=0
   - [ ] SIMD
   - [ ] Multithreading
 
