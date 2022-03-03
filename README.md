@@ -38,9 +38,15 @@
     - [x] Maybe should clip a triangle on znear zfar plane?
     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
 - [ ] Effects!!!
+  - [ ] Outlines
 - [ ] Lightning
-  - [x] GLOBAL Ilumination
+  - [ ] Proper normal interpolation
+    * https://hero.handmade.network/episode/code/day101/#105
   - [ ] Phong
+    - [x] diffuse
+    - [x] ambient
+    - [ ] specular
+     * reflecting vectors
   - [ ] Use all materials from OBJ
   - [ ] Point light
 - [ ] Reading PMX files
@@ -62,6 +68,7 @@
 - [ ] UI
   - [x] Labels
   - [x] Settings variables
+  - [x] Signals
   - [ ] Sliders
   - [ ] Groups
 - [x] Gamma correct alpha blending for rectangles and bitmaps
