@@ -56,6 +56,7 @@ struct OBJMaterial {
 };
 
 struct Obj {
+  S8 name;
   DynamicArray<Vec3> vertices;
   DynamicArray<Vec2> texture_coordinates;
   DynamicArray<Vec3> normals;
@@ -255,20 +256,6 @@ namespace obj {
           Vec2 *tex = result.texture_coordinates.push_empty();
           tex->x = (float)expect_number(&data);
           tex->y = (float)expect_number(&data);
-          
-          // tex->y = fmodf(tex->y, 1.f);
-          // if(tex->x < 0) {
-          //   tex->x = 1 - fmodf(ABS(tex->x), 1.f);
-          // }
-          // else {
-          //   tex->x = fmodf(tex->x, 1.f);  
-          // }
-          // if(tex->y < 0) {
-          //   tex->y = 1 - fmodf(ABS(tex->y), 1.f);
-          // }
-          // else {
-          //   tex->y = fmodf(tex->y, 1.f);
-          // }
           debug_expect_raw(&data, TokenType::whitespace);
         }
         else if (string_compare(token.s8, LIT("vn"))) {
@@ -281,9 +268,11 @@ namespace obj {
         else if (string_compare(token.s8, LIT("mtllib"))) {
           Token t = next_token(&data);
           S8 path = string_format(mtl_scratch, "%s/%s", path_obj_folder, t.s8);
-          S8 mtl_file = os_read_file(mtl_scratch, path).error_is_fatal();
-          PUSH_SIZE(mtl_scratch, 1);
-          parse_mtl(arena, &result, path_obj_folder, mtl_file);
+          Result<S8> mtl_file = os_read_file(mtl_scratch, path);
+          if(mtl_file.no_error()) {
+            PUSH_SIZE(mtl_scratch, 1);
+            parse_mtl(arena, &result, path_obj_folder, mtl_file.result);  
+          }
         }
         else if (string_compare(token.s8, LIT("usemtl"))) {
           Token t = next_token(&data);
@@ -386,5 +375,6 @@ FUNCTION Obj load_obj(Arena *arena, S8 file) {
   PUSH_SIZE(scratch, 1);
   S8 path = string_chop_last_slash(file);
   Obj result = obj::parse(arena, (char *)data.str, path);
+  result.name = file;
   return result;
 }

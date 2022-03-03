@@ -19,30 +19,33 @@
 /// - [x] Alpha blending
 /// - [x] Premultiplied alpha
 /// - [x] Merge with base
-/// - [ ] Lightning
-///   - [x] GLOBAL Ilumination
-///   - [ ] Phong
-///   - [ ] Use all materials from OBJ
-///   - [ ] Point light
+/// - [ ] Fill convention
+/// - [ ] Antialiasing (seems like performance gets really bad with this)
 /// - [x] LookAt Camera
 /// - [x] FPS Camera
+/// - [ ] Quarternions for rotations
 /// - [x] Reading OBJ models
 /// - [ ] Reading more OBJ formats
 /// - [x] Reading OBJ .mtl files
 /// - [x] Loading materials
 /// - [x] Rendering textures obj models
 /// - [x] Reading complex obj models (sponza)
-/// - [ ] Fix sponza uv coordinates
-/// - [ ] Reading PMX files
-/// - [ ] Rendering multiple objects, queue renderer
-///   - [x] Simple function to render a mesh
+/// - [x] Fix sponza uv coordinates - the issue was uv > 1 and uv < 0
 /// - [x] Clipping
 ///   - [x] Triagnle rectangle bound clipping
 ///   - [x] A way of culling Z out triangles 
 ///     - [x] Simple test z clipping
 ///     - [x] Maybe should clip a triangle on znear zfar plane?
 ///     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
-/// - [ ] Subpixel precision of triangle edges
+/// - [ ] Effects!!!
+/// - [ ] Lightning
+///   - [x] GLOBAL Ilumination
+///   - [ ] Phong
+///   - [ ] Use all materials from OBJ
+///   - [ ] Point light
+/// - [ ] Reading PMX files
+/// - [ ] Rendering multiple objects, queue renderer
+///   - [x] Simple function to render a mesh
 /// - [x] Simple profiling tooling
 /// - [x] Statistics based on profiler data
 /// - [x] Find cool profilers - ExtraSleepy, Vtune
@@ -56,7 +59,11 @@
 ///   - [ ] Multithreading
 ///
 /// - [x] Text rendering
-/// - [ ] Basic UI
+/// - [ ] UI
+///   - [x] Labels
+///   - [x] Settings variables
+///   - [ ] Sliders
+///   - [ ] Groups
 /// - [x] Gamma correct alpha blending for rectangles and bitmaps
 /// - [ ] Plotting of profile data
 ///    - [x] Simple scatter plot
@@ -100,7 +107,14 @@ struct R_Render {
 #include "obj_parser.cpp"
 #include <float.h>
 
+enum Scene {
+  Scene_F22,
+  Scene_Sponza,
+  Scene_Count,
+};
+
 GLOBAL B32 draw_rects = 0;
+GLOBAL Scene scene = Scene_Sponza;
 GLOBAL F32 zfar_value = 100000.f;
 GLOBAL F32 light_rotation = 0;
 
@@ -270,9 +284,10 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
 }
 
 FUNCTION 
-void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 light,
+void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
                   Vec4 p0,   Vec4 p1,   Vec4 p2,
-                  Vec2 tex0, Vec2 tex1, Vec2 tex2) {
+                  Vec2 tex0, Vec2 tex1, Vec2 tex2,
+                  Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(os.frame > 60) PROFILE_BEGIN(draw_triangle);
   F32 min_x1 = (F32)(MIN(p0.x, MIN(p1.x, p2.x)));
   F32 min_y1 = (F32)(MIN(p0.y, MIN(p1.y, p2.y)));
@@ -306,37 +321,34 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
     F32 Cx1 = Cy1;
     F32 Cx2 = Cy2;
     for (I64 x = min_x; x < max_x; x++) {
-      F32 edge0 = Cx0;
-      F32 edge1 = Cx1;
-      F32 edge2 = Cx2;
-
       if (Cx0 >= 0 && Cx1 >= 0 && Cx2 >= 0) {
         F32 w1 = Cx1 / area;
         F32 w2 = Cx2 / area;
         F32 w3 = Cx0 / area;
-        F32 interpolated_w = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
-        F32 u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
-        F32 v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
-        u /= interpolated_w;
-        v /= interpolated_w;
-        u = fmodf(u, 1.f);
-        v = fmodf(v, 1.f);
-        if(u < 0) {
-          u = 1 + u;
-        }
-        if(v < 0) {
-          v = 1 + v; 
-        }
 
-        // u = CLAMP(0, u, 1);
-        // v = CLAMP(0, v, 1);
         // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
         // but why waste an instruction, the smaller the depth value the farther the object
+        F32 interpolated_w = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
         F32* depth = depth_buffer + (x + y * dst->x);
         if (*depth < interpolated_w) {
           *depth = interpolated_w;
-          u = u * (src->x - 2);
-          v = v * (src->y - 2);
+          F32 invw0 = (w1 / p0.w);
+          F32 invw1 = (w2 / p1.w);
+          F32 invw2 = (w3 / p2.w);
+
+          Vec3 norm = (norm0 * invw0 + norm1 * invw1 + norm2 * invw2) / interpolated_w;
+          F32 u = tex0.x * invw0 + tex1.x * invw1 + tex2.x * invw2;
+          F32 v = tex0.y * invw0 + tex1.y * invw1 + tex2.y * invw2;
+          {
+            u /= interpolated_w;
+            v /= interpolated_w;
+            u = u - floor(u);
+            v = v - floor(v);
+            // u = CLAMP(0, u, 1);
+            // v = CLAMP(0, v, 1);
+            u = u * (src->x - 1);
+            v = v * (src->y - 1);
+          }
           I64 ui = (I64)(u);
           I64 vi = (I64)(v);
           F32 udiff = u - (F32)ui;
@@ -346,11 +358,37 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
           U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
 
 #if PREMULTIPLIED_ALPHA_BLENDING
-          Vec4 result_color = srgb_to_almost_linear(vec4abgr(*pixel));
-          Vec4 dst_color = srgb_to_almost_linear(vec4abgr(*dst_pixel));
-          result_color.r *= light;
-          result_color.g *= light;
-          result_color.b *= light;
+          Vec4 result_color; {
+            U32 c = *pixel;
+            F32 a = ((c & 0xff000000) >> 24) / 255.f;
+            F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
+            F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
+            F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
+            r*=r;
+            g*=g;
+            b*=b;
+            result_color = { r,g,b,a };  
+          }
+          
+          Vec4 dst_color; {
+            U32 c = *dst_pixel;
+            F32 a = ((c & 0xff000000) >> 24) / 255.f;
+            F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
+            F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
+            F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
+            r*=r; g*=g; b*=b;
+            dst_color = { r,g,b,a };  
+          }
+
+          F32 light = -dot(norm, light_direction);
+          {
+            light = CLAMP(0.1f, light, 1.f);
+            result_color.r *= light;
+            result_color.g *= light;
+            result_color.b *= light;  
+          }
+          
+
           result_color = premultiplied_alpha(dst_color, result_color);
           result_color = almost_linear_to_srgb(result_color);
           U32 color32 = vec4_to_u32abgr(result_color);
@@ -379,7 +417,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 ligh
 }
 
 FUNCTION 
-void draw_triangle_subpixel(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 light,
+void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 light,
   Vec4 p0,   Vec4 p1,   Vec4 p2,
   Vec2 tex0, Vec2 tex1, Vec2 tex2) {
   F32 min_x1 = (F32)(MIN(p0.x, MIN(p1.x, p2.x)));
@@ -397,6 +435,7 @@ void draw_triangle_subpixel(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 lig
       F32 edge0 = edge_function(p0, p1, { (F32)x,(F32)y });
       F32 edge1 = edge_function(p1, p2, { (F32)x,(F32)y });
       F32 edge2 = edge_function(p2, p0, { (F32)x,(F32)y });
+
 
       if (edge0 >= 0 && edge1 >= 0 && edge2 >= 0) {
         F32 w1 = edge1 / area;
@@ -476,34 +515,37 @@ void r_scatter_plot(Bitmap *dst, F64 *data, I64 data_len) {
     r_draw_rect(dst, (F32)x-2, (F32)y-2, 4, 4, vec4(1,0,0,1));
     //dst->pixels[xi + yi * dst->x] = 0xffff0000;
   }
-
 }
 
-S8 scenario_name = string_null;
 FUNCTION
-void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
+void r_draw_mesh(R_Render *r, S8 scene_name, OBJMaterial *materials, ObjMesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
   for (int i = 0; i < mesh->indices.len; i++) {
     ObjIndex *index = mesh->indices.e + i;
-    OBJMaterial *material = materials + index->material_id;
-    Bitmap *image = &material->texture_ambient;
-    if(image->pixels == 0) {
-      image = &r->img;
+    Bitmap *image = &r->img;
+    if(index->material_id != -1) {
+      OBJMaterial *material = materials + index->material_id;
+      // @Todo: No size info from OBJ things, this stuff needs a bit of refactor
+      //        Need to figure out how to accomodate multiple possible formats of input etc.
+      if(material->texture_ambient.pixels) {
+        image = &material->texture_ambient;
+      } 
     }
+    
     R_Vertex vert[] = {  
       {
         vertices[index->vertex[0] - 1],
-          tex_coords[index->tex[0] - 1],
-          normals[index->normal[0] - 1],
+        tex_coords[index->tex[0] - 1],
+        normals[index->normal[0] - 1],
       },
       {
         vertices[index->vertex[1] - 1],
-          tex_coords[index->tex[1] - 1],
-          normals[index->normal[1] - 1],
+        tex_coords[index->tex[1] - 1],
+        normals[index->normal[1] - 1],
       },
       {
         vertices[index->vertex[2] - 1],
-          tex_coords[index->tex[2] - 1],
-          normals[index->normal[2] - 1],
+        tex_coords[index->tex[2] - 1],
+        normals[index->normal[2] - 1],
       },
     };
 
@@ -518,8 +560,7 @@ void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *verti
     Vec3 p0_to_p2 = vert[2].pos - vert[0].pos;
     Vec3 normal = normalize(cross(p0_to_p1, p0_to_p2));
     Vec3 light_direction =  mat4_rotation_x(light_rotation) * vec3(0, 0, 1);
-    F32 light = -dot(normal, light_direction);
-    light = CLAMP(0.05f, light, 1.f);
+    
     if (dot(normal, p0_to_camera) > 0) { //@Note: Backface culling
       /// ## Clipping 
       /// 
@@ -565,6 +606,7 @@ void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *verti
       struct _R_Vertex {
         Vec4 pos;
         Vec2 tex;
+        Vec3 norm;
       } in[4];
       I32 in_count = 0;
 
@@ -577,11 +619,13 @@ void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *verti
         if (curr_dot * prev_dot < 0) {
           F32 t = prev_dot / (prev_dot - curr_dot);
           in[in_count].pos = vec4(lerp(prev->pos, curr->pos, t), 1);
-          in[in_count++].tex = lerp(prev->tex, curr->tex, t);
+          in[in_count].tex = lerp(prev->tex, curr->tex, t);
+          in[in_count++].norm = lerp(prev->norm, curr->norm, t);
         }
         if (curr_dot > 0) {
           in[in_count].pos = vec4(vert[j].pos, 1);
-          in[in_count++].tex = vert[j].tex;
+          in[in_count].tex = vert[j].tex;
+          in[in_count++].norm = vert[j].norm;
         }
         prev = curr++;
         prev_dot = curr_dot;
@@ -604,9 +648,9 @@ void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *verti
         in[j].pos.y += r->screen320.y / 2;
       }
       
-      draw_triangle_nearest(&r->screen320, r->depth320, image, light, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex);
+      draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
       if (in_count > 3) {
-        draw_triangle_nearest(&r->screen320, r->depth320, image, light, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex);
+        draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
       }
         
         
@@ -615,10 +659,7 @@ void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *verti
       LOCAL_PERSIST B32 profile_flag;
       if (!profile_flag && scope->i > 2000) {
         profile_flag = 1;
-        save_profile_data(scope, scenario_name, LIT("draw_triangle"));
-        r_scatter_plot(&r->plot, scope->samples, 2000);
-        r->plot_ready = true;
-        
+        save_profile_data(scope, scene_name, LIT("draw_triangle"));
       }
 #endif
         
@@ -628,8 +669,8 @@ void r_draw_mesh(R_Render *r, OBJMaterial *materials, ObjMesh *mesh, Vec3 *verti
 #include "ui.cpp"
 
 int main() {
-  os.window_size.x = 1280;
-  os.window_size.y = 720;
+  os.window_size.x = 320*2;
+  os.window_size.y = 180*2;
   os.window_resizable = 1;
   os_init().error_is_fatal();
   S8List list = {};
@@ -649,21 +690,16 @@ int main() {
     
   }
 
-  //scenario_name = LIT("assets/f22.obj");
-  //scenario_name = LIT("assets/cube.obj");
-  //scenario_name = LIT("assets/AnyConv.com__White.obj");
-  scenario_name = LIT("assets/sponza/sponza.obj");
-  Obj obj = load_obj(os.perm_arena, scenario_name);
-  Vec3* vertices = (Vec3 *)obj.vertices.e;
-  Vec2* tex_coords = (Vec2*)obj.texture_coordinates.e;
-  Vec3 *normals = (Vec3 *)obj.normals.e;
-  ObjMesh *mesh = obj.mesh.e;
+  
+  Obj f22 = load_obj(os.perm_arena, LIT("assets/f22.obj"));
+  Obj sponza = load_obj(os.perm_arena, LIT("assets/sponza/sponza.obj"));
+  Obj *obj = 0;
 
   F32 speed = 100.f;
   F32 rotation = 0;
 
-  int screen_x = 320*2;
-  int screen_y = 180*2;
+  int screen_x = 1280/2;
+  int screen_y = 720/2;
   R_Render r = {};
   r.camera_pos = {0,0,-2};
   r.screen320 = {(U32 *)PUSH_SIZE(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
@@ -676,7 +712,7 @@ int main() {
     Vec4 testc = vec4(1, 1, 1, 0.5f);
     testc.rgb *= testc.a;
     U32 testc32 = vec4_to_u32abgr(testc);
-    U32 a[] = { 
+    U32 a[] = { d
       testc32, testc32, testc32, testc32,
       testc32, testc32, testc32, testc32,
       testc32, testc32, testc32, testc32,
@@ -693,6 +729,7 @@ int main() {
   S8 frame_data = {};
   UISetup setup[] = {
     UI_BOOL(LIT("Draw rectangles:"), &draw_rects),
+    UI_OPTION(LIT("Scene:"), &scene, Scene_Count),
     UI_IMAGE(&r.plot),
     UI_LABEL(&frame_data),
   };
@@ -700,6 +737,19 @@ int main() {
   B32 ui_mouse_lock = true; 
 
   while (os_game_loop()) {
+    switch(scene) {
+      case Scene_F22: {
+        speed = 1;
+        obj = &f22;
+      } break;
+      case Scene_Sponza: {
+        speed = 100;
+        obj = &sponza;
+      } break;
+      case Scene_Count:
+      INVALID_DEFAULT_CASE;
+    }
+    
     if (ui_mouse_lock == false) {
       r.camera_yaw.x += os.delta_mouse_pos.x * 0.01f;
       r.camera_yaw.y -= os.delta_mouse_pos.y * 0.01f;
@@ -745,8 +795,12 @@ int main() {
     r.projection = mat4_perspective(60.f, (F32)os.screen->x, (F32)os.screen->y, 1.f, zfar_value);
     r.transform = mat4_rotation_z(rotation);
     r.transform = r.transform * mat4_rotation_y(rotation);
-    for (int i = 0; i < obj.mesh.len; i++) {
-      r_draw_mesh(&r, obj.materials.e, mesh+i, vertices, tex_coords, normals);
+    for (int i = 0; i < obj->mesh.len; i++) {
+      Vec2* tex_coords = (Vec2*)obj->texture_coordinates.e;
+      Vec3 *normals = (Vec3 *)obj->normals.e;
+      ObjMesh *mesh = obj->mesh.e;
+      Vec3* vertices = (Vec3 *)obj->vertices.e;
+      r_draw_mesh(&r, obj->name, obj->materials.e, mesh+i, vertices, tex_coords, normals);
     }
     
 
@@ -769,7 +823,7 @@ int main() {
 /////////////////////////////////////////////////////////////////////////////////////
 /// ### Resources that helped me build the rasterizer (Might be helpful to you too):
 /// 
-/// * Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
+/// * Algorithm I used for triangle rasterization by Juan Pineda is described in paper called "A Parallel Algorithm for Polygon Rasterization"
 /// * Casey Muratori's series on making a game from scratch(including a 2D software rasterizer(episode ~82) and 3d gpu renderer): https://hero.handmade.network/episode/code#
 /// * Fabian Giessen's "Optimizing Software Occlusion Culling": https://fgiesen.wordpress.com/2013/02/17/optimizing-sw-occlusion-culling-index/
 /// * Fabian Giessen's optimized software renderer: https://github.com/rygorous/intel_occlusion_cull/tree/blog/SoftwareOcclusionCulling
@@ -780,9 +834,6 @@ int main() {
 /// * A bunch of helpful notes and links to resources: https://nlguillemot.wordpress.com/2016/07/10/rasterizer-notes/
 /// * Very nice paid course on making a software rasterizer using a scanline method: https://pikuma.com/courses/learn-3d-computer-graphics-programming
 /// * Reference for obj loader: https://github.com/tinyobjloader/tinyobjloader/blob/master/tiny_obj_loader.h
-/// *
-/// * 
-/// * 
 ///
 /// ### To read
 ///

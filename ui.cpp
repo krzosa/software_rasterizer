@@ -3,6 +3,7 @@ enum UIWidgetKind {
   UIWidgetKind_Boolean,
   UIWidgetKind_Image,
   UIWidgetKind_Label,
+  UIWidgetKind_Option,
   UIWidgetKind_Group,
 };
 
@@ -14,11 +15,14 @@ struct UISetup {
     Bitmap *image;
     B32    *b32;
     S8     *label;
+    I32    *option;
   };
+  I32 option_max;
 };
 #define UI_BOOL(text, x) {UIWidgetKind_Boolean,text,(void*)(x)}
 #define UI_IMAGE(x)      {UIWidgetKind_Image,string_null,(void*)(x)}
 #define UI_LABEL(x)      {UIWidgetKind_Label,string_null,(void*)(x)}
+#define UI_OPTION(text,x,option_max){UIWidgetKind_Option,text,(void*)(x),(option_max)}
 
 struct UIWidget {
   UIWidgetKind kind;
@@ -29,10 +33,12 @@ struct UIWidget {
  
   S8 text;
   Vec2 size;
+  I32 option_max;
   union {
     Bitmap *image; 
     B32    *b32; 
     S8     *label;
+    I32    *option;
   } ptr;
 };
 
@@ -69,8 +75,9 @@ FUNCTION UIWidget *ui_push_image(Arena *arena, UIWidget *widget, Bitmap *img) {
   return result;
 }
 
-FUNCTION UIWidget *ui_push_bool(Arena *arena, UIWidget *widget, B32 *b32) {
+FUNCTION UIWidget *ui_push_bool(Arena *arena, UIWidget *widget, S8 string, B32 *b32) {
   UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Boolean);
+  result->text = string;
   result->ptr.b32 = b32;
   return result;
 }
@@ -78,6 +85,14 @@ FUNCTION UIWidget *ui_push_bool(Arena *arena, UIWidget *widget, B32 *b32) {
 FUNCTION UIWidget *ui_push_string(Arena *arena, UIWidget *widget, S8 *string) {
   UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Label);
   result->ptr.label = string;
+  return result;
+}
+
+FUNCTION UIWidget *ui_push_option(Arena *arena, UIWidget *widget, S8 string, I32 *option, I32 option_max) {
+  UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Option);
+  result->text = string;
+  result->ptr.option = option;
+  result->option_max = option_max;
   return result;
 }
 
@@ -91,10 +106,13 @@ FUNCTION UI ui_make(Arena *arena, UISetup *setup, U64 len) {
         ui_push_image(&result.arena, parent, s->image);
       } break;
       case UIWidgetKind_Boolean: {
-        ui_push_bool(&result.arena, parent, s->b32)->text = s->text;
+        ui_push_bool(&result.arena, parent, s->text, s->b32);
       } break;
       case UIWidgetKind_Label: {
         ui_push_string(&result.arena, parent, s->label);
+      } break;
+      case UIWidgetKind_Option: {
+        ui_push_option(&result.arena, parent, s->text, s->option, s->option_max);
       } break;
       INVALID_DEFAULT_CASE;
     }
@@ -166,6 +184,23 @@ FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
       case UIWidgetKind_Label: {
         pos.y -= font->height;
         rect = r_draw_string(dst, font, *w->ptr.label, pos);
+        pos.y -= rect.height - font->height;
+      } break;
+      case UIWidgetKind_Option: {
+        pos.y -= font->height;
+        Vec4 color = vec4(0, 0, 0, 1);
+        S8 string = string_format(scratch, "%s %d", w->text, *w->ptr.option);
+        rect = r_get_string_rect(font, string, pos);
+        B32 clicked = ui_mouse_test(ui, w, rect);
+        if (clicked) {
+          *w->ptr.b32 = (*w->ptr.b32+1) % w->option_max;
+        }
+        if (ui->hot == w) {
+          color = vec4(0.4f, 0.4f, 0.4f, 1.f);
+        }
+        rect.y = rect.y-font->line_advance / 5;
+        r_draw_rect(dst, rect.x, rect.y, rect.width, rect.height, color);
+        rect = r_draw_string(dst, font, string, pos);
         pos.y -= rect.height - font->height;
       } break;
       INVALID_DEFAULT_CASE;

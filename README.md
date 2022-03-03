@@ -19,30 +19,33 @@
 - [x] Alpha blending
 - [x] Premultiplied alpha
 - [x] Merge with base
-- [ ] Lightning
-  - [x] GLOBAL Ilumination
-  - [ ] Phong
-  - [ ] Use all materials from OBJ
-  - [ ] Point light
+- [ ] Fill convention
+- [ ] Antialiasing (seems like performance gets really bad with this)
 - [x] LookAt Camera
 - [x] FPS Camera
+- [ ] Quarternions for rotations
 - [x] Reading OBJ models
 - [ ] Reading more OBJ formats
 - [x] Reading OBJ .mtl files
 - [x] Loading materials
 - [x] Rendering textures obj models
 - [x] Reading complex obj models (sponza)
-- [ ] Fix sponza uv coordinates
-- [ ] Reading PMX files
-- [ ] Rendering multiple objects, queue renderer
-  - [x] Simple function to render a mesh
+- [x] Fix sponza uv coordinates - the issue was uv > 1 and uv < 0
 - [x] Clipping
   - [x] Triagnle rectangle bound clipping
   - [x] A way of culling Z out triangles
     - [x] Simple test z clipping
     - [x] Maybe should clip a triangle on znear zfar plane?
     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
-- [ ] Subpixel precision of triangle edges
+- [ ] Effects!!!
+- [ ] Lightning
+  - [x] GLOBAL Ilumination
+  - [ ] Phong
+  - [ ] Use all materials from OBJ
+  - [ ] Point light
+- [ ] Reading PMX files
+- [ ] Rendering multiple objects, queue renderer
+  - [x] Simple function to render a mesh
 - [x] Simple profiling tooling
 - [x] Statistics based on profiler data
 - [x] Find cool profilers - ExtraSleepy, Vtune
@@ -56,7 +59,11 @@
   - [ ] Multithreading
 
 - [x] Text rendering
-- [ ] Basic UI
+- [ ] UI
+  - [x] Labels
+  - [x] Settings variables
+  - [ ] Sliders
+  - [ ] Groups
 - [x] Gamma correct alpha blending for rectangles and bitmaps
 - [ ] Plotting of profile data
    - [x] Simple scatter plot
@@ -84,7 +91,7 @@ the box is clipped to the image metrics - 0, 0, width, height.
 
 ### Resources that helped me build the rasterizer (Might be helpful to you too):
 
-* Algorithm I used for triangle rasterization by Juan Pineda: https://www.cs.drexel.edu/~david/Classes/Papers/comp175-06-pineda.pdf
+* Algorithm I used for triangle rasterization by Juan Pineda is described in paper called "A Parallel Algorithm for Polygon Rasterization"
 * Casey Muratori's series on making a game from scratch(including a 2D software rasterizer(episode ~82) and 3d gpu renderer): https://hero.handmade.network/episode/code#
 * Fabian Giessen's "Optimizing Software Occlusion Culling": https://fgiesen.wordpress.com/2013/02/17/optimizing-sw-occlusion-culling-index/
 * Fabian Giessen's optimized software renderer: https://github.com/rygorous/intel_occlusion_cull/tree/blog/SoftwareOcclusionCulling
@@ -95,9 +102,6 @@ the box is clipped to the image metrics - 0, 0, width, height.
 * A bunch of helpful notes and links to resources: https://nlguillemot.wordpress.com/2016/07/10/rasterizer-notes/
 * Very nice paid course on making a software rasterizer using a scanline method: https://pikuma.com/courses/learn-3d-computer-graphics-programming
 * Reference for obj loader: https://github.com/tinyobjloader/tinyobjloader/blob/master/tiny_obj_loader.h
-*
-*
-*
 
 ### To read
 

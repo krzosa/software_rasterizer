@@ -4,7 +4,7 @@ enum ProfileScopeName {
 };
 
 struct ProfileScope {
-  F64 samples[5096];
+  U64 samples[5096];
   I64 i;
 };
 
@@ -12,12 +12,12 @@ GLOBAL ProfileScope profile_scopes[ProfileScopeName_Count];
 
 #define PROFILE_BEGIN(name) do { \
   ProfileScope *__profile_scope = profile_scopes + ProfileScopeName_##name; \
-    __profile_scope->samples[__profile_scope->i] = os_time()*1000; \
+    __profile_scope->samples[__profile_scope->i] = __rdtsc(); \
 } while (0)
 
 #define PROFILE_END(name) do { \
   ProfileScope *_profile_scope = profile_scopes + ProfileScopeName_##name; \
-    _profile_scope->samples[_profile_scope->i] = os_time()*1000 - _profile_scope->samples[_profile_scope->i]; \
+    _profile_scope->samples[_profile_scope->i] = __rdtsc() - _profile_scope->samples[_profile_scope->i]; \
       _profile_scope->i = (_profile_scope->i + 1) % 5096; \
 }while (0)
 
@@ -41,7 +41,7 @@ FN void save_profile_data(ProfileScope *scope, S8 scenario_name, S8 scope_name) 
   string_format(scratch, "%s %s\n", build_name, scenario_name);
   I64 one_past_last = scope->i;
   for (I64 si = 0; si < one_past_last; si++) {
-    string_format(scratch, "%f\n", scope->samples[si]);
+    string_format(scratch, "%u\n", scope->samples[si]);
   }
 
   S8 data = string_end(scratch, string_pointer);
