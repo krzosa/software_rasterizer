@@ -38,9 +38,15 @@
 ///     - [x] Maybe should clip a triangle on znear zfar plane?
 ///     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
 /// - [ ] Effects!!!
+///   - [ ] Outlines
 /// - [ ] Lightning
-///   - [x] GLOBAL Ilumination
+///   - [ ] Proper normal interpolation
+///     * https://hero.handmade.network/episode/code/day101/#105
 ///   - [ ] Phong
+///     - [x] diffuse
+///     - [x] ambient
+///     - [ ] specular
+///      * reflecting vectors
 ///   - [ ] Use all materials from OBJ
 ///   - [ ] Point light
 /// - [ ] Reading PMX files
@@ -62,6 +68,7 @@
 /// - [ ] UI
 ///   - [x] Labels
 ///   - [x] Settings variables
+///   - [x] Signals
 ///   - [ ] Sliders
 ///   - [ ] Groups
 /// - [x] Gamma correct alpha blending for rectangles and bitmaps
@@ -113,10 +120,10 @@ enum Scene {
   Scene_Count,
 };
 
-GLOBAL B32 draw_rects = 0;
-GLOBAL Scene scene = Scene_Sponza;
-GLOBAL F32 zfar_value = 100000.f;
+
 GLOBAL F32 light_rotation = 0;
+GLOBAL F32 zfar_value = 100000.f;
+
 
 FUNCTION
 Vec4 srgb_to_almost_linear(Vec4 a) {
@@ -380,13 +387,14 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
             dst_color = { r,g,b,a };  
           }
 
-          F32 light = -dot(norm, light_direction);
-          {
-            light = CLAMP(0.1f, light, 1.f);
-            result_color.r *= light;
-            result_color.g *= light;
-            result_color.b *= light;  
+          Vec3 light_color = vec3(0.8,0.8,1);
+          constexpr F32 ambient_strength = 0.1f; {
+            Vec3 ambient = ambient_strength * light_color;
+            Vec3 diffuse = CLAMP_BOT(0, -dot(norm, light_direction)) * light_color;
+            result_color.rgb *= (ambient+diffuse);
           }
+          
+          
           
 
           result_color = premultiplied_alpha(dst_color, result_color);
@@ -408,11 +416,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
     Cy2 -= dx02;
     destination += dst->x;
   }
-  if (draw_rects) {
-    r_draw_rect(dst, p0.x-4, p0.y-4, 8,8, vec4(1,0,0,1));
-    r_draw_rect(dst, p1.x-4, p1.y-4, 8,8, vec4(0,1,0,1));
-    r_draw_rect(dst, p2.x-4, p2.y-4, 8,8, vec4(0,0,1,1));
-  }
+  
   if(os.frame > 60) PROFILE_END(draw_triangle);
 }
 
@@ -488,11 +492,6 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 lig
         }
       }
     }
-  }
-  if (draw_rects) {
-    r_draw_rect(dst, p0.x-4, p0.y-4, 8,8, vec4(1,0,0,1));
-    r_draw_rect(dst, p1.x-4, p1.y-4, 8,8, vec4(0,1,0,1));
-    r_draw_rect(dst, p2.x-4, p2.y-4, 8,8, vec4(0,0,1,1));
   }
 }
 
@@ -668,6 +667,31 @@ void r_draw_mesh(R_Render *r, S8 scene_name, OBJMaterial *materials, ObjMesh *me
 }
 #include "ui.cpp"
 
+F32 speed = 100.f;
+F32 rotation = 0;
+Obj f22;
+Obj sponza;
+Obj *obj;
+R_Render r = {};
+GLOBAL Scene scene = Scene_Sponza;
+UI_SIGNAL_CALLBACK(scene_callback) {
+  switch(scene) {
+    case Scene_F22: {
+      speed = 1;
+      r.camera_pos = vec3(0,0,-2);
+      obj = &f22;
+    } break;
+    case Scene_Sponza: {
+      speed = 100;
+      r.camera_pos = vec3(0,0,-2);
+      obj = &sponza;
+    } break;
+    case Scene_Count:
+    INVALID_DEFAULT_CASE;
+  }
+  scene = (Scene)(((int)scene + 1) % Scene_Count);
+}
+
 int main() {
   os.window_size.x = 320*2;
   os.window_size.y = 180*2;
@@ -691,16 +715,13 @@ int main() {
   }
 
   
-  Obj f22 = load_obj(os.perm_arena, LIT("assets/f22.obj"));
-  Obj sponza = load_obj(os.perm_arena, LIT("assets/sponza/sponza.obj"));
-  Obj *obj = 0;
-
-  F32 speed = 100.f;
-  F32 rotation = 0;
+  f22 = load_obj(os.perm_arena, LIT("assets/f22.obj"));
+  sponza = load_obj(os.perm_arena, LIT("assets/sponza/sponza.obj"));
+  scene_callback();
 
   int screen_x = 1280/2;
   int screen_y = 720/2;
-  R_Render r = {};
+  
   r.camera_pos = {0,0,-2};
   r.screen320 = {(U32 *)PUSH_SIZE(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   r.plot = {(U32 *)PUSH_SIZE(os.perm_arena, 1280*720*sizeof(U32)), 1280, 720};
@@ -728,8 +749,7 @@ int main() {
 
   S8 frame_data = {};
   UISetup setup[] = {
-    UI_BOOL(LIT("Draw rectangles:"), &draw_rects),
-    UI_OPTION(LIT("Scene:"), &scene, Scene_Count),
+    UI_SIGNAL(LIT("Change scene"), scene_callback),
     UI_IMAGE(&r.plot),
     UI_LABEL(&frame_data),
   };
@@ -737,18 +757,7 @@ int main() {
   B32 ui_mouse_lock = true; 
 
   while (os_game_loop()) {
-    switch(scene) {
-      case Scene_F22: {
-        speed = 1;
-        obj = &f22;
-      } break;
-      case Scene_Sponza: {
-        speed = 100;
-        obj = &sponza;
-      } break;
-      case Scene_Count:
-      INVALID_DEFAULT_CASE;
-    }
+    
     
     if (ui_mouse_lock == false) {
       r.camera_yaw.x += os.delta_mouse_pos.x * 0.01f;
@@ -757,7 +766,6 @@ int main() {
     if (os.key[Key_Escape].pressed) os_quit();
     if (os.key[Key_O].down) light_rotation += 0.05f;
     if (os.key[Key_P].down) light_rotation -= 0.05f;
-    if (os.key[Key_F1].pressed) draw_rects = !draw_rects;
     if (os.key[Key_F2].pressed) {
       ui_mouse_lock = !ui_mouse_lock;
       os_show_cursor(!os.cursor_visible);

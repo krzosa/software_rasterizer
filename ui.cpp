@@ -4,9 +4,12 @@ enum UIWidgetKind {
   UIWidgetKind_Image,
   UIWidgetKind_Label,
   UIWidgetKind_Option,
+  UIWidgetKind_Signal,
   UIWidgetKind_Group,
 };
 
+#define UI_SIGNAL_CALLBACK(name) void name()
+typedef UI_SIGNAL_CALLBACK(UISignalCallback);
 struct UISetup {
   UIWidgetKind kind;
   S8 text;
@@ -16,6 +19,7 @@ struct UISetup {
     B32    *b32;
     S8     *label;
     I32    *option;
+    UISignalCallback *signal_callback;
   };
   I32 option_max;
 };
@@ -23,6 +27,7 @@ struct UISetup {
 #define UI_IMAGE(x)      {UIWidgetKind_Image,string_null,(void*)(x)}
 #define UI_LABEL(x)      {UIWidgetKind_Label,string_null,(void*)(x)}
 #define UI_OPTION(text,x,option_max){UIWidgetKind_Option,text,(void*)(x),(option_max)}
+#define UI_SIGNAL(text,x){UIWidgetKind_Signal,text,(void*)(x)}
 
 struct UIWidget {
   UIWidgetKind kind;
@@ -39,6 +44,7 @@ struct UIWidget {
     B32    *b32; 
     S8     *label;
     I32    *option;
+    UISignalCallback *signal_callback;
   } ptr;
 };
 
@@ -96,6 +102,13 @@ FUNCTION UIWidget *ui_push_option(Arena *arena, UIWidget *widget, S8 string, I32
   return result;
 }
 
+FUNCTION UIWidget *ui_push_signal(Arena *arena, UIWidget *widget, S8 string, UISignalCallback *callback) {
+  UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Signal);
+  result->text = string;
+  result->ptr.signal_callback = callback;
+  return result;
+}
+
 FUNCTION UI ui_make(Arena *arena, UISetup *setup, U64 len) {
   UI result = {};
   result.arena = arena_sub(arena, MiB(16));
@@ -113,6 +126,9 @@ FUNCTION UI ui_make(Arena *arena, UISetup *setup, U64 len) {
       } break;
       case UIWidgetKind_Option: {
         ui_push_option(&result.arena, parent, s->text, s->option, s->option_max);
+      } break;
+      case UIWidgetKind_Signal: {
+        ui_push_signal(&result.arena, parent, s->text, s->signal_callback);
       } break;
       INVALID_DEFAULT_CASE;
     }
@@ -194,6 +210,23 @@ FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
         B32 clicked = ui_mouse_test(ui, w, rect);
         if (clicked) {
           *w->ptr.b32 = (*w->ptr.b32+1) % w->option_max;
+        }
+        if (ui->hot == w) {
+          color = vec4(0.4f, 0.4f, 0.4f, 1.f);
+        }
+        rect.y = rect.y-font->line_advance / 5;
+        r_draw_rect(dst, rect.x, rect.y, rect.width, rect.height, color);
+        rect = r_draw_string(dst, font, string, pos);
+        pos.y -= rect.height - font->height;
+      } break;
+      case UIWidgetKind_Signal: {
+        pos.y -= font->height;
+        Vec4 color = vec4(0, 0, 0, 1);
+        S8 string = string_format(scratch, "%s", w->text);
+        rect = r_get_string_rect(font, string, pos);
+        B32 clicked = ui_mouse_test(ui, w, rect);
+        if (clicked) {
+          w->ptr.signal_callback();
         }
         if (ui->hot == w) {
           color = vec4(0.4f, 0.4f, 0.4f, 1.f);
