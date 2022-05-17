@@ -12,20 +12,20 @@ enum UIWidgetKind {
 typedef UI_SIGNAL_CALLBACK(UISignalCallback);
 struct UISetup {
   UIWidgetKind kind;
-  S8 text;
+  String text;
   union {
     void *v;
     Bitmap *image;
     B32    *b32;
-    S8     *label;
-    I32    *option;
+    String     *label;
+    S32    *option;
     UISignalCallback *signal_callback;
   };
-  I32 option_max;
+  S32 option_max;
 };
 #define UI_BOOL(text, x) {UIWidgetKind_Boolean,text,(void*)(x)}
-#define UI_IMAGE(x)      {UIWidgetKind_Image,string_null,(void*)(x)}
-#define UI_LABEL(x)      {UIWidgetKind_Label,string_null,(void*)(x)}
+#define UI_IMAGE(x)      {UIWidgetKind_Image,{},(void*)(x)}
+#define UI_LABEL(x)      {UIWidgetKind_Label,{},(void*)(x)}
 #define UI_OPTION(text,x,option_max){UIWidgetKind_Option,text,(void*)(x),(option_max)}
 #define UI_SIGNAL(text,x){UIWidgetKind_Signal,text,(void*)(x)}
 
@@ -35,66 +35,66 @@ struct UIWidget {
   UIWidget    *prev;
   UIWidget    *first_child;
   UIWidget    *last_child;
- 
-  S8 text;
+  
+  String text;
   Vec2 size;
-  I32 option_max;
+  S32 option_max;
   union {
     Bitmap *image; 
     B32    *b32; 
-    S8     *label;
-    I32    *option;
+    String     *label;
+    S32    *option;
     UISignalCallback *signal_callback;
   } ptr;
 };
 
 struct UI : UIWidget {
   Arena arena;
-
+  
   UIWidget *hot;
   UIWidget *active;
 };
 
-FUNCTION UIWidget *ui_new_widget(Arena *arena, UIWidgetKind kind) {
-  UIWidget *result = PUSH_STRUCT(arena, UIWidget);
+function UIWidget *ui_new_widget(Allocator *arena, UIWidgetKind kind) {
+  UIWidget *result = exp_alloc_type(arena, UIWidget);
   result->kind = kind;
   return result;
 }
 
-FUNCTION void ui_push_child(UIWidget *widget, UIWidget *child) {
-  DLL_QUEUE_PUSH(widget->first_child, widget->last_child, child);
+function void ui_push_child(UIWidget *widget, UIWidget *child) {
+  //DLL_QUEUE_PUSH(widget->first_child, widget->last_child, child);
 }
 
-FUNCTION UIWidget *ui_push_child(Arena *arena, UIWidget *widget, UIWidgetKind kind) {
+function UIWidget *ui_push_child(Arena *arena, UIWidget *widget, UIWidgetKind kind) {
   UIWidget *result = ui_new_widget(arena, kind);
   ui_push_child(widget, result);
   return result;
 }
 
-FUNCTION UIWidget *ui_push_image(Arena *arena, UIWidget *widget, Bitmap *img) {
+function UIWidget *ui_push_image(Arena *arena, UIWidget *widget, Bitmap *img) {
   UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Image);
   result->ptr.image = img;
-
+  
   F32 ratio = (F32)result->ptr.image->x / (F32)result->ptr.image->y;
   result->size.y = 64;
   result->size.x = 64 * ratio;
   return result;
 }
 
-FUNCTION UIWidget *ui_push_bool(Arena *arena, UIWidget *widget, S8 string, B32 *b32) {
+function UIWidget *ui_push_bool(Arena *arena, UIWidget *widget, String string, B32 *b32) {
   UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Boolean);
   result->text = string;
   result->ptr.b32 = b32;
   return result;
 }
 
-FUNCTION UIWidget *ui_push_string(Arena *arena, UIWidget *widget, S8 *string) {
+function UIWidget *ui_push_string(Arena *arena, UIWidget *widget, String *string) {
   UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Label);
   result->ptr.label = string;
   return result;
 }
 
-FUNCTION UIWidget *ui_push_option(Arena *arena, UIWidget *widget, S8 string, I32 *option, I32 option_max) {
+function UIWidget *ui_push_option(Arena *arena, UIWidget *widget, String string, S32 *option, S32 option_max) {
   UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Option);
   result->text = string;
   result->ptr.option = option;
@@ -102,16 +102,16 @@ FUNCTION UIWidget *ui_push_option(Arena *arena, UIWidget *widget, S8 string, I32
   return result;
 }
 
-FUNCTION UIWidget *ui_push_signal(Arena *arena, UIWidget *widget, S8 string, UISignalCallback *callback) {
+function UIWidget *ui_push_signal(Arena *arena, UIWidget *widget, String string, UISignalCallback *callback) {
   UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Signal);
   result->text = string;
   result->ptr.signal_callback = callback;
   return result;
 }
 
-FUNCTION UI ui_make(Arena *arena, UISetup *setup, U64 len) {
+function UI ui_make(UISetup *setup, U64 len) {
   UI result = {};
-  result.arena = arena_sub(arena, MiB(16));
+  arena_init(&result.arena, "UI_Arena"_s);
   UIWidget *parent = &result;
   for (UISetup *s = setup; s != (setup+len); s++) {
     switch (s->kind) {
@@ -130,16 +130,16 @@ FUNCTION UI ui_make(Arena *arena, UISetup *setup, U64 len) {
       case UIWidgetKind_Signal: {
         ui_push_signal(&result.arena, parent, s->text, s->signal_callback);
       } break;
-      INVALID_DEFAULT_CASE;
+      invalid_default_case;
     }
   }
   return result;
 }
 
-FUNCTION B32 ui_mouse_test(UI *ui, UIWidget *w, Vec4 rect) {
+function B32 ui_mouse_test(UI *ui, UIWidget *w, Vec4 rect) {
   B32 result = false;
   if (os.mouse_pos.x > rect.x && os.mouse_pos.x < rect.x + rect.width &&
-    os.mouse_pos.y > rect.y && os.mouse_pos.y < rect.y + rect.height) {
+      os.mouse_pos.y > rect.y && os.mouse_pos.y < rect.y + rect.height) {
     ui->hot = w;
     if (os.key[Key_MouseLeft].down) {
       ui->active = w;
@@ -148,7 +148,7 @@ FUNCTION B32 ui_mouse_test(UI *ui, UIWidget *w, Vec4 rect) {
   else if (w == ui->hot) {
     ui->hot = 0;
   }
-
+  
   if (os.key[Key_MouseLeft].released) {
     if (ui->active == w) {
       if (ui->hot == w)
@@ -156,11 +156,11 @@ FUNCTION B32 ui_mouse_test(UI *ui, UIWidget *w, Vec4 rect) {
       ui->active = 0;
     }
   }
-
+  
   return result;
 }
 
-FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
+function void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
   Scratch scratch;
   Vec2 pos = vec2(0, (F32)dst->y);
   for (UIWidget *w = ui->first_child; w; w = w->next) {
@@ -170,7 +170,7 @@ FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
         pos.y -= w->size.y;
         rect = vec4(pos, w->size);
         ui_mouse_test(ui, w, rect);
-        S8 string = string_format(scratch, "%d %d", w->ptr.image->x, w->ptr.image->y);
+        String string = string_fmt(scratch, "%d %d", w->ptr.image->x, w->ptr.image->y);
         r_draw_string(dst, font, string, pos);
         r_draw_bitmap(dst, w->ptr.image, pos, w->size);
         if (ui->active == w) {
@@ -185,7 +185,7 @@ FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
       case UIWidgetKind_Boolean: {
         pos.y -= font->height;
         Vec4 color = vec4(0, 0, 0, 1);
-        S8 string = string_format(scratch, "%s %d", w->text, *w->ptr.b32);
+        String string = string_fmt(scratch, "%s %d", w->text, *w->ptr.b32);
         rect = r_get_string_rect(font, string, pos);
         B32 clicked = ui_mouse_test(ui, w, rect);
         if (clicked) *w->ptr.b32 = !*w->ptr.b32;
@@ -205,7 +205,7 @@ FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
       case UIWidgetKind_Option: {
         pos.y -= font->height;
         Vec4 color = vec4(0, 0, 0, 1);
-        S8 string = string_format(scratch, "%s %d", w->text, *w->ptr.option);
+        String string = string_fmt(scratch, "%s %d", w->text, *w->ptr.option);
         rect = r_get_string_rect(font, string, pos);
         B32 clicked = ui_mouse_test(ui, w, rect);
         if (clicked) {
@@ -222,7 +222,7 @@ FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
       case UIWidgetKind_Signal: {
         pos.y -= font->height;
         Vec4 color = vec4(0, 0, 0, 1);
-        S8 string = string_format(scratch, "%s", w->text);
+        String string = string_fmt(scratch, "%s", w->text);
         rect = r_get_string_rect(font, string, pos);
         B32 clicked = ui_mouse_test(ui, w, rect);
         if (clicked) {
@@ -236,7 +236,7 @@ FUNCTION void ui_end_frame(Bitmap *dst, UI *ui, Font *font) {
         rect = r_draw_string(dst, font, string, pos);
         pos.y -= rect.height - font->height;
       } break;
-      INVALID_DEFAULT_CASE;
+      invalid_default_case;
     }
   }
 }

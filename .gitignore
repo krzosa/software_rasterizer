@@ -13,3 +13,4 @@ data.txt
 *.vcxproj*
 *.rdbg
 *.sublime*
+*.bin

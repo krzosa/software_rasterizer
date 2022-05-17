@@ -1,0 +1,9 @@
+project_name='software_render'
+whitelist=['*.cpp' '*.c' '*.h' '*.4c']
+blacklist=[]
+F1='build.bat'
+F5='build.bat && remedybg start-debugging'
+F10='build.bat && remedybg run-to-cursor {file} {line}'
+F11='remedybg main.exe'
+include=['{project}']
+// includes_recursive='false'
