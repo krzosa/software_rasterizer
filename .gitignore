@@ -14,3 +14,4 @@ data.txt
 *.rdbg
 *.sublime*
 *.bin
+*.4c
