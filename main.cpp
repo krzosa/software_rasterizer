@@ -81,13 +81,14 @@
 /// ### Urgent: 
 /// 
 /// - [ ] Simplify the code, especially for the 2d routines
-/// - [ ] Asset processor as second program
+/// - [x] Asset processor as second program
 ///
 ///
 
 #define PREMULTIPLIED_ALPHA_BLENDING 1
 #include "multimedia.cpp"
 #include "profile.cpp"
+#include "obj.cpp"
 
 struct Vertex {
   Vec3 pos;
@@ -111,11 +112,6 @@ struct Render {
   Bitmap screen320;
   F32 *depth320;
 };
-
-#define STBI_ASSERT assert
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-#include "obj_parser.cpp"
 
 enum Scene {
   Scene_F22,
@@ -213,13 +209,8 @@ void draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos, Vec2 size=vec2(F32MAX, F32M
     S64 maxy = miny + (S64)(size.y + 0.5f);
     S64 offsetx = 0;
     S64 offsety = 0;
-    
-    if (maxx > dst->x) {
-      maxx = dst->x;
-    }
-    if (maxy > dst->y) {
-      maxy = dst->y;
-    }
+    maxx = clamp_top(maxx, (S64)dst->x);
+    maxy = clamp_top(maxy, (S64)dst->y);
     if (minx < 0) {
       offsetx = -minx;
       minx = 0;
@@ -228,6 +219,7 @@ void draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos, Vec2 size=vec2(F32MAX, F32M
       offsety = -miny;
       miny = 0;
     }
+    
     F32 distx = (F32)(maxx - minx);
     F32 disty = (F32)(maxy - miny);
     for (S64 y = miny; y < maxy; y++) {
@@ -247,7 +239,6 @@ void draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos, Vec2 size=vec2(F32MAX, F32M
       }
     }
   }
-  
 }
 
 function
@@ -396,8 +387,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
           }
           
           
-          
-          
           result_color = premultiplied_alpha(dst_color, result_color);
           result_color = almost_linear_to_srgb(result_color);
           U32 color32 = vec4_to_u32abgr(result_color);
@@ -422,17 +411,19 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 }
 
 function 
-void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 light,
+void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
                             Vec4 p0,   Vec4 p1,   Vec4 p2,
-                            Vec2 tex0, Vec2 tex1, Vec2 tex2) {
+                            Vec2 tex0, Vec2 tex1, Vec2 tex2, 
+                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
   F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
   F32 max_y1 = (F32)(max(p0.y, max(p1.y, p2.y)));
-  S64 min_x = (S64)max(0.f, floor(min_x1));
-  S64 min_y = (S64)max(0.f, floor(min_y1));
-  S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
-  S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
+  
+  S64 min_x = (S64)clamp_bot(0.f, floor(min_x1));
+  S64 min_y = (S64)clamp_bot(0.f, floor(min_y1));
+  S64 max_x = (S64)clamp_top((F32)dst->x, ceil(max_x1));
+  S64 max_y = (S64)clamp_top((F32)dst->y, ceil(max_y1));
   
   F32 area = edge_function(p0, p1, p2);
   for (S64 y = min_y; y < max_y; y++) {
@@ -440,7 +431,6 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 lig
       F32 edge0 = edge_function(p0, p1, { (F32)x,(F32)y });
       F32 edge1 = edge_function(p1, p2, { (F32)x,(F32)y });
       F32 edge2 = edge_function(p2, p0, { (F32)x,(F32)y });
-      
       
       if (edge0 >= 0 && edge1 >= 0 && edge2 >= 0) {
         F32 w1 = edge1 / area;
@@ -450,6 +440,7 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 lig
         
         F32 u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
         F32 v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
+        
         u /= interpolated_w;
         v /= interpolated_w;
         // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
@@ -478,9 +469,12 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 lig
           Vec4 blendx1 = lerp(pixelx1y1, pixelx2y1, udiff);
           Vec4 blendx2 = lerp(pixelx1y2, pixelx2y2, udiff);
           Vec4 result_color = lerp(blendx1, blendx2, vdiff);
+          
+#if 0
           result_color.r *= light;
           result_color.g *= light;
           result_color.b *= light;
+#endif
 #if PREMULTIPLIED_ALPHA_BLENDING
           Vec4 dst_color = vec4abgr(*dst_pixel);
           dst_color = srgb_to_almost_linear(dst_color);
@@ -497,27 +491,6 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 lig
 }
 
 function
-void scatter_plot(Bitmap *dst, F64 *data, S64 data_len) {
-  F64 min = F32MAX;
-  F64 max = F32MIN;
-  F64 step = dst->x / (F64)data_len;
-  for (U32 i = 0; i < data_len; i++) {
-    if (min > data[i]) min = data[i];
-    if (max < data[i]) max = data[i];
-  }
-  F64 diff = max - min;
-  F64 x = 0;
-  for (U32 i = 0; i < data_len; i++) {
-    F64 *p = data + i;
-    *p /= diff;
-    F64 y = *p * dst->y;
-    x += step;
-    draw_rect(dst, (F32)x-2, (F32)y-2, 4, 4, vec4(1,0,0,1));
-    //dst->pixels[xi + yi * dst->x] = 0xffff0000;
-  }
-}
-
-function
 void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
   for (int i = 0; i < mesh->indices.len; i++) {
     Obj_Index *index = mesh->indices.data + i;
@@ -530,7 +503,6 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
         image = &material->texture_ambient;
       } 
     }
-    
     Vertex vert[] = {  
       {
         vertices[index->vertex[0] - 1],
@@ -648,11 +620,11 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
         in[j].pos.y += r->screen320.y / 2;
       }
       
+      
       draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
       if (in_count > 3) {
         draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
       }
-      
       
 #if 0
       ProfileScope *scope = profile_scopes + ProfileScopeName_draw_triangle;
@@ -662,7 +634,6 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
         save_profile_data(scope, scene_name, LIT("draw_triangle"));
       }
 #endif
-      
     }
   }
 }
@@ -670,7 +641,7 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
 #include "ui.cpp"
 global F32 speed = 100.f;
 global F32 rotation = 0;
-global Obj f22;
+global Obj *f22;
 global Obj *sponza;
 global Obj *obj;
 global Render r = {};
@@ -682,7 +653,7 @@ UI_SIGNAL_CALLBACK(scene_callback) {
     case Scene_F22: {
       speed = 1;
       r.camera_pos = vec3(0,0,-2);
-      obj = &f22;
+      obj = f22;
     } break;
     case Scene_Sponza: {
       speed = 100;
@@ -706,12 +677,9 @@ int main(int argc, char **argv) {
   os.window_size.y = 180*2;
   os.window_resizable = 1;
   assert(os_init());
-  Font font = os_load_font(os.perm_arena, 24, "Arial", 0);
+  Font font = os_load_font(os.perm_arena, 72, "Arial", 0);
   
-  f22 = load_obj(&os_process_heap, "assets/f22.obj"_s);
-  //Obj sponza_obj = load_obj(&os_process_heap, "assets/sponza/sponza.obj"_s);
-  //sponza = &sponza_obj;
-  //dump_obj_to_file(sponza);
+  f22 = load_obj_dump(os.perm_arena, "plane.bin"_s);
   sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);
   scene_callback();
   
@@ -722,7 +690,7 @@ int main(int argc, char **argv) {
   r.screen320 = {(U32 *)arena_push_size(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   r.plot = {(U32 *)arena_push_size(os.perm_arena, 1280*720*sizeof(U32)), 1280, 720};
   r.depth320 = (F32 *)arena_push_size(os.perm_arena, sizeof(F32) * screen_x * screen_y);
-  r.img = load_image("assets/bricksx64.png"_s);
+  //r.img = load_image(""_s);
   
   
   String frame_data = {};
