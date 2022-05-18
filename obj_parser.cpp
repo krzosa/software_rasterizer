@@ -1,3 +1,7 @@
+///
+/// [ ] - Cache bitmaps
+/// [ ] - Fix potential portability issues due to compiler struct alignment differences etc.
+///
 
 struct Obj_Index {
   int vertex[3];
@@ -159,9 +163,11 @@ parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
         m->name_len = clamp_top(token.len, 64);
         memory_copy(m->name, token.s8.str, m->name_len);
       }
+      
       else if (string_compare(token.s8, "Ns"_s)) {
         m->shininess = expect_number(&data);
       }
+      
       else if (string_compare(token.s8, "Ka"_s)) {
         m->ambient_color.x = expect_number(&data);
         m->ambient_color.y = expect_number(&data);
@@ -172,6 +178,7 @@ parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
         m->diffuse_color.y = expect_number(&data);
         m->diffuse_color.z = expect_number(&data);
       }
+      
       else if (string_compare(token.s8, "Ks"_s)) {
         m->specular_color.x = expect_number(&data);
         m->specular_color.y = expect_number(&data);
@@ -180,27 +187,32 @@ parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
       else if (string_compare(token.s8, "Ni"_s)) {
         m->optical_density = expect_number(&data);
       }
+      
       else if (string_compare(token.s8, "d"_s)) {
         m->non_transparency = expect_number(&data);
       }
       else if (string_compare(token.s8, "illum"_s)) {
         m->illumination_model = (S32)expect_number(&data);
       }
+      
       else if (string_compare(token.s8, "map_Kd"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(scratch, "%Q/%Q\0", path_obj_folder, t.s8);
         m->texture_diffuse = load_image(path);
       }
+      
       else if (string_compare(token.s8, "map_Ka"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(scratch, "%Q/%Q\0", path_obj_folder, t.s8);
         m->texture_ambient = load_image(path);
       }
+      
       else if (string_compare(token.s8, "map_d"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(scratch, "%Q/%Q\0", path_obj_folder, t.s8);
         m->texture_dissolve = load_image(path);
       }
+      
       else if (string_compare(token.s8, "map_Disp"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(scratch, "%Q/%Q\0", path_obj_folder, t.s8);
@@ -212,17 +224,18 @@ parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
 
 function Obj 
 parse(Allocator *allocator, char* data, String path_obj_folder) {
+  Set_Allocator(allocator);
   Scratch mtl_scratch;
   Obj result = {};
-  result.vertices.init(allocator, 160000);
-  result.texture_coordinates.init(allocator, 160000);
-  result.normals.init(allocator, 160000);
-  result.mesh.init(allocator, 64);
-  result.materials.init(allocator, 64);
+  //result.vertices.init(allocator, 160000);
+  //result.texture_coordinates.init(allocator, 160000);
+  //result.normals.init(allocator, 160000);
+  //result.mesh.init(allocator, 64);
+  //result.materials.init(allocator, 64);
   int smoothing = 0;
   
   Obj_Mesh *mesh = result.mesh.push_empty_zero();
-  mesh->indices.init(allocator);
+  //mesh->indices.init(allocator);
   int material_id = -1;
   
   S64 debug_i = 0;
@@ -237,12 +250,14 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
         vertex->z = (float)expect_number(&data);
         debug_expect_raw(&data, Obj_Token_Type::whitespace);
       }
+      
       else if (string_compare(token.s8, "vt"_s)) {
         Vec2 *tex = result.texture_coordinates.push_empty_zero();
         tex->x = (float)expect_number(&data);
         tex->y = (float)expect_number(&data);
         debug_expect_raw(&data, Obj_Token_Type::whitespace);
       }
+      
       else if (string_compare(token.s8, "vn"_s)) {
         Vec3 *norm = result.normals.push_empty_zero();
         norm->x = (float)expect_number(&data);
@@ -250,6 +265,7 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
         norm->z = (float)expect_number(&data);
         debug_expect_raw(&data, Obj_Token_Type::whitespace);
       }
+      
       else if (string_compare(token.s8, "mtllib"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(mtl_scratch, "%Q/%Q", path_obj_folder, t.s8);
@@ -258,6 +274,7 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
           parse_mtl(&result, path_obj_folder, mtl_file);  
         }
       }
+      
       else if (string_compare(token.s8, "usemtl"_s)) {
         Obj_Token t = next_token(&data);
         assert(t.type == Obj_Token_Type::word);
@@ -269,18 +286,19 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
           }
         }
       }
+      
       else if (string_compare(token.s8, "o"_s)) {
         Obj_Token t = next_token(&data);
         assert(t.type == Obj_Token_Type::word);
         if (mesh->indices.len != 0) {
           mesh = result.mesh.push_empty_zero();
-          mesh->indices.init(allocator);
         }
         else {
           U64 len = clamp_top(t.len, 64);
           memory_copy(mesh->name, t.s, len);
         }
       }
+      
       else if (string_compare(token.s8, "s"_s)) {
         Obj_Token t = next_token(&data);
         if (t.type == Obj_Token_Type::number) {
@@ -298,10 +316,12 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
         }
         
       }
+      
       else if (string_compare(token.s8, "g"_s)) {
         Obj_Token t = next_token(&data);
         assert(t.type == Obj_Token_Type::word);
       }
+      
       else if (string_compare(token.s8, "f"_s)) {
         Obj_Index *i = mesh->indices.push_empty_zero();
         i->smoothing_group_id = smoothing;
@@ -328,29 +348,6 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
     }
   }
   return result;
-}
-
-function void 
-test_lex() {
-  const char* d = "v 0.885739 0.001910 -0.380334";
-  char* dd = (char *)d;
-  assert(next_token(&dd).type == Obj_Token_Type::word);
-  Obj_Token t = next_token(&dd); assert(t.type == Obj_Token_Type::number && t.number > 0.8857);
-  t = next_token(&dd); assert(t.type == Obj_Token_Type::number && t.number > 0.0019);
-  t = next_token(&dd); assert(t.type == Obj_Token_Type::number && t.number < -0.38);
-  d = "# Blender v2.79 (sub 0) OBJ File: 'fighters_0.blend'\n"
-    "# www.blender.org\n"
-    "mtllib f-22.mtl\n"
-    "o F-22\n";
-  dd = (char *)d;
-  t = next_token(&dd); assert(t.type == Obj_Token_Type::word && string_compare(t.s8, "mtllib"_s));
-  t = next_token(&dd); assert(t.type == Obj_Token_Type::word && string_compare(t.s8, "f-22.mtl"_s));
-  t = next_token(&dd); assert(t.type == Obj_Token_Type::word && string_compare(t.s8, "o"_s));
-  t = next_token(&dd); assert(t.type == Obj_Token_Type::word && string_compare(t.s8, "F-22"_s));
-}
-
-void test() {
-  test_lex();
 }
 
 function Obj 
@@ -386,25 +383,17 @@ _os_write_file(String file, String data, B32 append = false) {
     creation_disposition = OPEN_ALWAYS;
   }
   
-  Scratch scratch; // @Todo(Krzosa): Unicode
+  // @Todo(Krzosa): Unicode
   HANDLE handle = CreateFileA((const char *)file.str, access, 0, NULL, creation_disposition, FILE_ATTRIBUTE_NORMAL, NULL);
   if (handle != INVALID_HANDLE_VALUE) {
     DWORD bytes_written = 0;
     // @Todo: can only read 32 byte size files?
-    assert_msg(data.len == (U32)data.len,
-               "Max data size os_write can handle is 32 bytes, data to write is "
-               "larger then 32 bytes!");
+    assert_msg(data.len == (U32)data.len, "Max data size os_write can handle is 32 bytes, data to write is larger then 32 bytes!");
     B32 error = WriteFile(handle, data.str, (U32)data.len, &bytes_written, NULL);
-    if (error == false) {
-      log_error("Failed to write to file: %Q", file);
-    } 
+    if (error == false) log_error("Failed to write to file: %Q", file);
     else {
-      if (bytes_written != data.len) {
-        log_error("Failed to write to file: %Q, mismatch between length requested to write and length written", file);
-      }
-      else{
-        result = true;
-      }
+      if (bytes_written != data.len) log_error("Failed to write to file: %Q, mismatch between length requested to write and length written", file);
+      else result = true;
     }
     CloseHandle(handle);
   } 
@@ -483,7 +472,7 @@ dump_obj_to_file(Obj *obj){
     dump_bitmap_image(&sb, &it->texture_displacement);
   }
   
-  String result = string_flatten(&sb);
+  String result = string_flatten(arena, &sb);
   os_write_file("sponza.bin"_s, result);
 }
 

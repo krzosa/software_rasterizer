@@ -78,21 +78,24 @@
 ///    - [x] Simple scatter plot
 /// 
 /// 
+/// ### Urgent: 
+/// 
+/// - [ ] Simplify the code, especially for the 2d routines
+/// - [ ] Asset processor as second program
+///
+///
 
 #define PREMULTIPLIED_ALPHA_BLENDING 1
-#include "base.cpp"
-#include "kpl_multimedia.h"
-#include "kpl_multimedia.cpp"
+#include "multimedia.cpp"
 #include "profile.cpp"
-#include "math.h"
 
-struct R_Vertex {
+struct Vertex {
   Vec3 pos;
   Vec2 tex;
   Vec3 norm;
 };
 
-struct R_Render {
+struct Render {
   Mat4 camera;
   Mat4 projection;
   Mat4 transform;
@@ -109,6 +112,7 @@ struct R_Render {
   F32 *depth320;
 };
 
+#define STBI_ASSERT assert
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "obj_parser.cpp"
@@ -145,7 +149,7 @@ Vec4 premultiplied_alpha(Vec4 dst, Vec4 src) {
 }
 
 function
-void r_draw_rect(Bitmap* dst, F32 X, F32 Y, F32 w, F32 h, Vec4 color) {
+void draw_rect(Bitmap* dst, F32 X, F32 Y, F32 w, F32 h, Vec4 color) {
   int max_x = (int)(min(X + w, (F32)dst->x) + 0.5f);
   int max_y = (int)(min(Y + h, (F32)dst->y) + 0.5f);
   int min_x = (int)(max(0.f, X) + 0.5f);
@@ -165,7 +169,7 @@ void r_draw_rect(Bitmap* dst, F32 X, F32 Y, F32 w, F32 h, Vec4 color) {
 }
 
 function
-void r_draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos, Vec2 size=vec2(F32MAX, F32MAX)) {
+void draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos, Vec2 size=vec2(F32MAX, F32MAX)) {
   S64 minx = (S64)(pos.x + 0.5);
   S64 miny = (S64)(pos.y + 0.5);
   
@@ -247,7 +251,7 @@ void r_draw_bitmap(Bitmap* dst, Bitmap* src, Vec2 pos, Vec2 size=vec2(F32MAX, F3
 }
 
 function
-Vec4 r_base_string(Bitmap *dst, Font *font, String word, Vec2 pos, B32 draw) {
+Vec4 base_string(Bitmap *dst, Font *font, String word, Vec2 pos, B32 draw) {
   Vec2 og_position = pos;
   F32 max_x = pos.x;
   for (U64 i = 0; i < word.len; i++) {
@@ -262,7 +266,7 @@ Vec4 r_base_string(Bitmap *dst, Font *font, String word, Vec2 pos, B32 draw) {
     }
     else {
       FontGlyph* g = &font->glyphs[word.str[i] - '!'];
-      if(draw) r_draw_bitmap(dst, &g->bitmap, pos - g->bitmap.align);
+      if(draw) draw_bitmap(dst, &g->bitmap, pos - g->bitmap.align);
       pos.x += g->xadvance;
       if (pos.x > max_x) max_x = pos.x;
     }
@@ -272,13 +276,13 @@ Vec4 r_base_string(Bitmap *dst, Font *font, String word, Vec2 pos, B32 draw) {
 }
 
 function
-Vec4 r_draw_string(Bitmap *dst, Font *font, String word, Vec2 pos) {
-  return r_base_string(dst, font, word, pos, true);
+Vec4 draw_string(Bitmap *dst, Font *font, String word, Vec2 pos) {
+  return base_string(dst, font, word, pos, true);
 }
 
 function
-Vec4 r_get_string_rect(Font *font, String word, Vec2 pos) {
-  return r_base_string(0, font, word, pos, false);
+Vec4 get_string_rect(Font *font, String word, Vec2 pos) {
+  return base_string(0, font, word, pos, false);
 }
 
 function
@@ -493,7 +497,7 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, F32 lig
 }
 
 function
-void r_scatter_plot(Bitmap *dst, F64 *data, S64 data_len) {
+void scatter_plot(Bitmap *dst, F64 *data, S64 data_len) {
   F64 min = F32MAX;
   F64 max = F32MIN;
   F64 step = dst->x / (F64)data_len;
@@ -508,13 +512,13 @@ void r_scatter_plot(Bitmap *dst, F64 *data, S64 data_len) {
     *p /= diff;
     F64 y = *p * dst->y;
     x += step;
-    r_draw_rect(dst, (F32)x-2, (F32)y-2, 4, 4, vec4(1,0,0,1));
+    draw_rect(dst, (F32)x-2, (F32)y-2, 4, 4, vec4(1,0,0,1));
     //dst->pixels[xi + yi * dst->x] = 0xffff0000;
   }
 }
 
 function
-void r_draw_mesh(R_Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
+void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
   for (int i = 0; i < mesh->indices.len; i++) {
     Obj_Index *index = mesh->indices.data + i;
     Bitmap *image = &r->img;
@@ -527,7 +531,7 @@ void r_draw_mesh(R_Render *r, String scene_name, Obj_Material *materials, Obj_Me
       } 
     }
     
-    R_Vertex vert[] = {  
+    Vertex vert[] = {  
       {
         vertices[index->vertex[0] - 1],
         tex_coords[index->tex[0] - 1],
@@ -599,15 +603,15 @@ void r_draw_mesh(R_Render *r, String scene_name, Obj_Material *materials, Obj_Me
       Vec3 znear_normal = vec3(0, 0, 1);
       Vec3 znear_pos = vec3(0, 0, 1.f);
       
-      struct _R_Vertex {
+      struct _Vertex {
         Vec4 pos;
         Vec2 tex;
         Vec3 norm;
       } in[4];
       S32 in_count = 0;
       
-      R_Vertex *prev = vert + 2;
-      R_Vertex *curr = vert;
+      Vertex *prev = vert + 2;
+      Vertex *curr = vert;
       F32       prev_dot = dot(znear_normal, prev->pos - znear_pos);
       F32       curr_dot = 0;
       for (int j = 0; j < 3; j++) {
@@ -669,7 +673,7 @@ global F32 rotation = 0;
 global Obj f22;
 global Obj *sponza;
 global Obj *obj;
-global R_Render r = {};
+global Render r = {};
 global Scene scene = Scene_Sponza;
 
 function
@@ -691,7 +695,13 @@ UI_SIGNAL_CALLBACK(scene_callback) {
   scene = (Scene)(((int)scene + 1) % Scene_Count);
 }
 
+function void
+windows_log(Log_Kind kind, String string, char *file, int line){
+  OutputDebugStringA((char *)string.str);
+}
+
 int main(int argc, char **argv) {
+  thread_ctx.log_proc = windows_log;
   os.window_size.x = 320*2;
   os.window_size.y = 180*2;
   os.window_resizable = 1;
@@ -703,7 +713,6 @@ int main(int argc, char **argv) {
   //sponza = &sponza_obj;
   //dump_obj_to_file(sponza);
   sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);
-  
   scene_callback();
   
   int screen_x = 1280/2;
@@ -714,24 +723,6 @@ int main(int argc, char **argv) {
   r.plot = {(U32 *)arena_push_size(os.perm_arena, 1280*720*sizeof(U32)), 1280, 720};
   r.depth320 = (F32 *)arena_push_size(os.perm_arena, sizeof(F32) * screen_x * screen_y);
   r.img = load_image("assets/bricksx64.png"_s);
-  
-  /* @Note: Transparent texture */ { 
-#if 0
-    Vec4 testc = vec4(1, 1, 1, 0.5f);
-    testc.rgb *= testc.a;
-    U32 testc32 = vec4_to_u32abgr(testc);
-    U32 a[] = { d
-        testc32, testc32, testc32, testc32,
-      testc32, testc32, testc32, testc32,
-      testc32, testc32, testc32, testc32,
-      testc32, testc32, testc32, testc32,
-    };
-    r.img.pixels = a;
-    r.img.x = 4;
-    r.img.y = 4;
-#endif
-  }
-  
   
   
   String frame_data = {};
@@ -795,7 +786,7 @@ int main(int argc, char **argv) {
       Vec3 *normals = (Vec3 *)obj->normals.data;
       Obj_Mesh *mesh = obj->mesh.data;
       Vec3* vertices = (Vec3 *)obj->vertices.data;
-      r_draw_mesh(&r, obj->name, obj->materials.data, mesh+i, vertices, tex_coords, normals);
+      draw_mesh(&r, obj->name, obj->materials.data, mesh+i, vertices, tex_coords, normals);
     }
     
     
