@@ -43,7 +43,7 @@
 ///   - [ ] Outlines
 /// - [ ] Lightning
 ///   - [ ] Proper normal interpolation
-///     * https://hero.handmade.network/episode/code/day101/#105
+///     * `https://hero.handmade.network/episode/code/day101/#105
 ///   - [ ] Phong
 ///     - [x] diffuse
 ///     - [x] ambient
@@ -255,7 +255,7 @@ Vec4 base_string(Bitmap *dst, Font *font, String word, Vec2 pos, B32 draw) {
       pos.y -= font->line_advance;
       pos.x = og_position.x;
     }
-    else {
+    else if((word.str[i] >= '!' && word.str[i] <= 127)){
       FontGlyph* g = &font->glyphs[word.str[i] - '!'];
       if(draw) draw_bitmap(dst, &g->bitmap, pos - g->bitmap.align);
       pos.x += g->xadvance;
@@ -343,8 +343,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
             v /= interpolated_w;
             u = u - floor(u);
             v = v - floor(v);
-            // u = CLAMP(0, u, 1);
-            // v = CLAMP(0, v, 1);
             u = u * (src->x - 1);
             v = v * (src->y - 1);
           }
@@ -438,18 +436,27 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 li
         F32 w3 = edge0 / area;
         F32 interpolated_w = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
         
-        F32 u = tex0.x * (w1 / p0.w) + tex1.x * (w2 / p1.w) + tex2.x * (w3 / p2.w);
-        F32 v = tex0.y * (w1 / p0.w) + tex1.y * (w2 / p1.w) + tex2.y * (w3 / p2.w);
-        
-        u /= interpolated_w;
-        v /= interpolated_w;
         // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
         // but why waste an instruction, the smaller the depth value the farther the object
         F32* depth = depth_buffer + (x + y * dst->x);
-        if (*depth < interpolated_w && interpolated_w > 0.1f) {
+        if (*depth < interpolated_w) {
           *depth = interpolated_w;
-          u = u * (src->x - 2);
-          v = v * (src->y - 2);
+          F32 invw0 = (w1 / p0.w);
+          F32 invw1 = (w2 / p1.w);
+          F32 invw2 = (w3 / p2.w);
+          
+          Vec3 norm = (norm0 * invw0 + norm1 * invw1 + norm2 * invw2) / interpolated_w;
+          F32 u = tex0.x * invw0 + tex1.x * invw1 + tex2.x * invw2;
+          F32 v = tex0.y * invw0 + tex1.y * invw1 + tex2.y * invw2;
+          {
+            u /= interpolated_w;
+            v /= interpolated_w;
+            u = u - floor(u);
+            v = v - floor(v);
+            u = u * (src->x - 1);
+            v = v * (src->y - 1);
+          }
+          
           S64 ui = (S64)(u);
           S64 vi = (S64)(v);
           F32 udiff = u - (F32)ui;
@@ -470,16 +477,16 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 li
           Vec4 blendx2 = lerp(pixelx1y2, pixelx2y2, udiff);
           Vec4 result_color = lerp(blendx1, blendx2, vdiff);
           
-#if 0
-          result_color.r *= light;
-          result_color.g *= light;
-          result_color.b *= light;
-#endif
-#if PREMULTIPLIED_ALPHA_BLENDING
+          Vec3 light_color = vec3(0.8,0.8,1);
+          constexpr F32 ambient_strength = 0.1f; {
+            Vec3 ambient = ambient_strength * light_color;
+            Vec3 diffuse = clamp_bot(0.f, -dot(norm, light_direction)) * light_color;
+            result_color.rgb *= (ambient+diffuse);
+          }
+          
           Vec4 dst_color = vec4abgr(*dst_pixel);
           dst_color = srgb_to_almost_linear(dst_color);
           result_color = premultiplied_alpha(dst_color, result_color);
-#endif // PREMULTIPLIED_ALPHA_BLENDING
           result_color = almost_linear_to_srgb(result_color);
           U32 color32 = vec4_to_u32abgr(result_color);
           
@@ -613,6 +620,7 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
         in[j].pos.x = in[j].pos.x / in[j].pos.w;
         in[j].pos.y = in[j].pos.y / in[j].pos.w;
         // in[j].pos.z = in[j].pos.z / in[j].pos.w;
+        
         //@Note: To pixel space
         in[j].pos.x *= r->screen320.x / 2;
         in[j].pos.y *= r->screen320.y / 2;
@@ -621,9 +629,9 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
       }
       
       
-      draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
+      draw_triangle_bilinear(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
       if (in_count > 3) {
-        draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+        draw_triangle_bilinear(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
       }
       
 #if 0
@@ -671,10 +679,11 @@ windows_log(Log_Kind kind, String string, char *file, int line){
   OutputDebugStringA((char *)string.str);
 }
 
-int main(int argc, char **argv) {
+int 
+main(int argc, char **argv) {
   thread_ctx.log_proc = windows_log;
-  os.window_size.x = 320*2;
-  os.window_size.y = 180*2;
+  os.window_size.x = 1280;
+  os.window_size.y = 720;
   os.window_resizable = 1;
   assert(os_init());
   Font font = os_load_font(os.perm_arena, 72, "Arial", 0);
@@ -683,28 +692,23 @@ int main(int argc, char **argv) {
   sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);
   scene_callback();
   
-  int screen_x = 1280/2;
-  int screen_y = 720/2;
+  int screen_x = 320;
+  int screen_y = 180;
   
   r.camera_pos = {0,0,-2};
   r.screen320 = {(U32 *)arena_push_size(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
-  r.plot = {(U32 *)arena_push_size(os.perm_arena, 1280*720*sizeof(U32)), 1280, 720};
   r.depth320 = (F32 *)arena_push_size(os.perm_arena, sizeof(F32) * screen_x * screen_y);
-  //r.img = load_image(""_s);
-  
   
   String frame_data = {};
   UISetup setup[] = {
     UI_SIGNAL("Change scene"_s, scene_callback),
-    UI_IMAGE(&r.plot),
     UI_LABEL(&frame_data),
+    UI_LABEL(&os.text),
   };
   UI ui = ui_make(setup, buff_cap(setup));
   B32 ui_mouse_lock = true; 
   
   while (os_game_loop()) {
-    
-    
     if (ui_mouse_lock == false) {
       r.camera_yaw.x += os.delta_mouse_pos.x * 0.01f;
       r.camera_yaw.y -= os.delta_mouse_pos.y * 0.01f;

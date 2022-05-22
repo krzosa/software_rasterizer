@@ -5,7 +5,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-
 enum class Obj_Token_Type {
   none, word, number, whitespace, end
 };
@@ -425,8 +424,21 @@ dump_obj_to_file(Obj *obj, String out_name){
   os_write_file(out_name, result);
 }
 
+global FILE *output_file;
+
+function void
+asset_log(Log_Kind kind, String string, char *file, int line){
+  if(!output_file) {
+    
+  }
+  fprintf(output_file, "%.*s", string_expand(string));
+}
+
 int 
 main(int argc, char **argv){
+  output_file = fopen("asset.log.txt", "a");
+  thread_ctx.log_proc = asset_log;
+  
   Obj sponza_obj = load_obj(&os_process_heap, "assets/sponza/sponza.obj"_s);
   dump_obj_to_file(&sponza_obj, "sponza.bin"_s);
   
@@ -445,4 +457,5 @@ main(int argc, char **argv){
   }
   
   dump_obj_to_file(&plane_obj, "plane.bin"_s);
+  fclose(output_file);
 }
