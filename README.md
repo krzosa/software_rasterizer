@@ -25,6 +25,8 @@
 - [x] FPS Camera
 - [ ] Quarternions for rotations
 - [x] Reading OBJ models
+- [x] Dumping raw obj files
+- [x] Loading raw obj files, big startup speedup!
 - [ ] Reading more OBJ formats
 - [x] Reading OBJ .mtl files
 - [x] Loading materials
@@ -41,7 +43,7 @@
   - [ ] Outlines
 - [ ] Lightning
   - [ ] Proper normal interpolation
-    * https://hero.handmade.network/episode/code/day101/#105
+    * `https://hero.handmade.network/episode/code/day101/#105
   - [ ] Phong
     - [x] diffuse
     - [x] ambient
@@ -74,6 +76,12 @@
 - [x] Gamma correct alpha blending for rectangles and bitmaps
 - [ ] Plotting of profile data
    - [x] Simple scatter plot
+
+
+### Urgent:
+
+- [ ] Simplify the code, especially for the 2d routines
+- [x] Asset processor as second program
 
 
 ## Clipping

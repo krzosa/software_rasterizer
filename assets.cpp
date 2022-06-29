@@ -21,11 +21,11 @@ struct Obj_Token {
   };
 };
 
-function Bitmap 
+function Bitmap
 load_image(String path) {
   Scratch scratch;
   String file = os_read_file(scratch, path);
-  
+
   int x, y, n;
   unsigned char* data = stbi_load_from_memory(file.str, file.len, &x, &y, &n, 4);
   Bitmap result = { (U32*)data, x, y };
@@ -40,7 +40,7 @@ load_image(String path) {
         color.b *= color.a;
         *p++ = vec4_to_u32abgr(color);
       }
-    }  
+    }
   }
 #endif
   return result;
@@ -50,7 +50,7 @@ function Obj_Token next_token_raw(char** data) {
   Obj_Token result = {};
   result.s = *data;
   *data += 1;
-  
+
   if (is_alphabetic(*result.s)) {
     result.type = Obj_Token_Type::word;
     while (!is_whitespace(**data)) {
@@ -81,7 +81,7 @@ function Obj_Token next_token_raw(char** data) {
   else if (*result.s >= '!') {
     result.type = (Obj_Token_Type)*result.s;
   }
-  
+
   return result;
 }
 
@@ -110,12 +110,12 @@ function void debug_expect_raw(char** data, Obj_Token_Type type) {
   assert(t.type == type);
 }
 
-function void 
+function void
 parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
   Scratch scratch;
   char *data = (char *)mtl_file.str;
   Obj_Material *m = 0;
-  
+
   for (;;) {
     Obj_Token token = next_token(&data);
     if (token.type == Obj_Token_Type::end) break;
@@ -126,11 +126,11 @@ parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
         m->name_len = clamp_top(token.len, 64);
         memory_copy(m->name, token.s8.str, m->name_len);
       }
-      
+
       else if (string_compare(token.s8, "Ns"_s)) {
         m->shininess = expect_number(&data);
       }
-      
+
       else if (string_compare(token.s8, "Ka"_s)) {
         m->ambient_color.x = expect_number(&data);
         m->ambient_color.y = expect_number(&data);
@@ -141,7 +141,7 @@ parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
         m->diffuse_color.y = expect_number(&data);
         m->diffuse_color.z = expect_number(&data);
       }
-      
+
       else if (string_compare(token.s8, "Ks"_s)) {
         m->specular_color.x = expect_number(&data);
         m->specular_color.y = expect_number(&data);
@@ -150,32 +150,32 @@ parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
       else if (string_compare(token.s8, "Ni"_s)) {
         m->optical_density = expect_number(&data);
       }
-      
+
       else if (string_compare(token.s8, "d"_s)) {
         m->non_transparency = expect_number(&data);
       }
       else if (string_compare(token.s8, "illum"_s)) {
         m->illumination_model = (S32)expect_number(&data);
       }
-      
+
       else if (string_compare(token.s8, "map_Kd"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(scratch, "%Q/%Q\0", path_obj_folder, t.s8);
         m->texture_diffuse = load_image(path);
       }
-      
+
       else if (string_compare(token.s8, "map_Ka"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(scratch, "%Q/%Q\0", path_obj_folder, t.s8);
         m->texture_ambient = load_image(path);
       }
-      
+
       else if (string_compare(token.s8, "map_d"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(scratch, "%Q/%Q\0", path_obj_folder, t.s8);
         m->texture_dissolve = load_image(path);
       }
-      
+
       else if (string_compare(token.s8, "map_Disp"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(scratch, "%Q/%Q\0", path_obj_folder, t.s8);
@@ -185,7 +185,7 @@ parse_mtl(Obj* obj, String path_obj_folder, String mtl_file) {
   }
 }
 
-function Obj 
+function Obj
 parse(Allocator *allocator, char* data, String path_obj_folder) {
   Set_Allocator(allocator);
   Scratch mtl_scratch;
@@ -196,11 +196,11 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
   //result.mesh.init(allocator, 64);
   //result.materials.init(allocator, 64);
   int smoothing = 0;
-  
+
   Obj_Mesh *mesh = result.mesh.push_empty_zero();
   //mesh->indices.init(allocator);
   int material_id = -1;
-  
+
   S64 debug_i = 0;
   for (;;debug_i++){
     Obj_Token token = next_token(&data);
@@ -213,14 +213,14 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
         vertex->z = (float)expect_number(&data);
         debug_expect_raw(&data, Obj_Token_Type::whitespace);
       }
-      
+
       else if (string_compare(token.s8, "vt"_s)) {
         Vec2 *tex = result.texture_coordinates.push_empty_zero();
         tex->x = (float)expect_number(&data);
         tex->y = (float)expect_number(&data);
         debug_expect_raw(&data, Obj_Token_Type::whitespace);
       }
-      
+
       else if (string_compare(token.s8, "vn"_s)) {
         Vec3 *norm = result.normals.push_empty_zero();
         norm->x = (float)expect_number(&data);
@@ -228,16 +228,16 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
         norm->z = (float)expect_number(&data);
         debug_expect_raw(&data, Obj_Token_Type::whitespace);
       }
-      
+
       else if (string_compare(token.s8, "mtllib"_s)) {
         Obj_Token t = next_token(&data);
         String path = string_fmt(mtl_scratch, "%Q/%Q", path_obj_folder, t.s8);
         String mtl_file = os_read_file(mtl_scratch, path);
         if(mtl_file.str) {
-          parse_mtl(&result, path_obj_folder, mtl_file);  
+          parse_mtl(&result, path_obj_folder, mtl_file);
         }
       }
-      
+
       else if (string_compare(token.s8, "usemtl"_s)) {
         Obj_Token t = next_token(&data);
         assert(t.type == Obj_Token_Type::word);
@@ -249,7 +249,7 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
           }
         }
       }
-      
+
       else if (string_compare(token.s8, "o"_s)) {
         Obj_Token t = next_token(&data);
         assert(t.type == Obj_Token_Type::word);
@@ -261,7 +261,7 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
           memory_copy(mesh->name, t.s, len);
         }
       }
-      
+
       else if (string_compare(token.s8, "s"_s)) {
         Obj_Token t = next_token(&data);
         if (t.type == Obj_Token_Type::number) {
@@ -277,14 +277,14 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
           }
           else invalid_codepath;
         }
-        
+
       }
-      
+
       else if (string_compare(token.s8, "g"_s)) {
         Obj_Token t = next_token(&data);
         assert(t.type == Obj_Token_Type::word);
       }
-      
+
       else if (string_compare(token.s8, "f"_s)) {
         Obj_Index *i = mesh->indices.push_empty_zero();
         i->smoothing_group_id = smoothing;
@@ -294,13 +294,13 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
         i->tex[0] = (int)expect_number(&data);
         expect_token(&data, '/');
         i->normal[0] = (int)expect_number(&data);
-        
+
         i->vertex[1] = (int)expect_number(&data);
         expect_token(&data, '/');
         i->tex[1] = (int)expect_number(&data);
         expect_token(&data, '/');
         i->normal[1] = (int)expect_number(&data);
-        
+
         i->vertex[2] = (int)expect_number(&data);
         expect_token(&data, '/');
         i->tex[2] = (int)expect_number(&data);
@@ -313,19 +313,19 @@ parse(Allocator *allocator, char* data, String path_obj_folder) {
   return result;
 }
 
-function Obj 
+function Obj
 load_obj(Allocator *arena, String file) {
   Scratch scratch;
   String data = os_read_file(scratch, file);
   assert(data.str);
-  
+
   String path = string_chop_last_slash(file);
   Obj result = parse(arena, (char *)data.str, path);
   result.name = file;
   return result;
 }
 
-template<class T> void 
+template<class T> void
 dump_array(String_Builder *sb, Array<T> *arr){
   sb->append_data(arr, sizeof(*arr));
   sb->append_data(arr->data, sizeof(T)*arr->len);
@@ -336,6 +336,7 @@ dump_bitmap_image(String_Builder *sb, Bitmap *bm){
   sb->append_data(bm->pixels, sizeof(U32)*bm->x*bm->y);
 }
 
+
 function B32
 _os_write_file(String file, String data, B32 append = false) {
   B32 result = false;
@@ -345,7 +346,7 @@ _os_write_file(String file, String data, B32 append = false) {
     access = FILE_APPEND_DATA;
     creation_disposition = OPEN_ALWAYS;
   }
-  
+
   // @Todo(Krzosa): Unicode
   HANDLE handle = CreateFileA((const char *)file.str, access, 0, NULL, creation_disposition, FILE_ATTRIBUTE_NORMAL, NULL);
   if (handle != INVALID_HANDLE_VALUE) {
@@ -359,19 +360,19 @@ _os_write_file(String file, String data, B32 append = false) {
       else result = true;
     }
     CloseHandle(handle);
-  } 
+  }
   else {
     log_error("File not found when trying to write: %Q", file);
   }
-  
+
   return result;
 }
 
-function B32 
-os_write_file(String file, String data) {
+function B32
+os_write_file2(String file, String data) {
   return _os_write_file(file, data, false);
 }
-function B32 
+function B32
 os_append_file(String file, String data) {
   return _os_write_file(file, data, true);
 }
@@ -380,24 +381,24 @@ function void
 dump_obj_to_file(Obj *obj, String out_name){
   obj->vertices.allocator = 0;
   obj->vertices.cap = obj->vertices.len;
-  
+
   obj->texture_coordinates.allocator = 0;
   obj->texture_coordinates.cap = obj->texture_coordinates.len;
-  
+
   obj->normals.allocator = 0;
   obj->normals.cap = obj->normals.len;
-  
+
   obj->mesh.allocator = 0;
   obj->mesh.cap = obj->mesh.len;
-  
+
   obj->materials.allocator = 0;
   obj->materials.cap = obj->materials.len;
-  
-  Iter(obj->mesh){
-    it->indices.allocator = 0;
-    it->indices.cap = it->indices.len;
+
+  For(obj->mesh){
+    it.indices.allocator = 0;
+    it.indices.cap = it.indices.len;
   }
-  
+
   Scratch arena;
   String_Builder sb = string_builder_make(arena, mib(4));
   sb.append_data(obj, sizeof(Obj));
@@ -407,21 +408,21 @@ dump_obj_to_file(Obj *obj, String out_name){
   sb.append_data(obj->normals.data, obj->normals.len*sizeof(Vec3));
   sb.append_data(obj->mesh.data, obj->mesh.len*sizeof(Obj_Mesh));
   sb.append_data(obj->materials.data, obj->materials.len*sizeof(Obj_Material));
-  
-  Iter(obj->mesh){
-    sb.append_data(it->indices.data, sizeof(Obj_Index)*it->indices.len);
+
+  For(obj->mesh){
+    sb.append_data(it.indices.data, sizeof(Obj_Index)*it.indices.len);
   }
-  
-  Iter(obj->materials){
-    sb.append_data(it, sizeof(Obj_Material));
-    dump_bitmap_image(&sb, &it->texture_ambient);
-    dump_bitmap_image(&sb, &it->texture_diffuse);
-    dump_bitmap_image(&sb, &it->texture_dissolve);
-    dump_bitmap_image(&sb, &it->texture_displacement);
+
+  For(obj->materials){
+    sb.append_data(&it, sizeof(Obj_Material));
+    dump_bitmap_image(&sb, &it.texture_ambient);
+    dump_bitmap_image(&sb, &it.texture_diffuse);
+    dump_bitmap_image(&sb, &it.texture_dissolve);
+    dump_bitmap_image(&sb, &it.texture_displacement);
   }
-  
+
   String result = string_flatten(arena, &sb);
-  os_write_file(out_name, result);
+  os_write_file2(out_name, result);
 }
 
 global FILE *output_file;
@@ -429,21 +430,21 @@ global FILE *output_file;
 function void
 asset_log(Log_Kind kind, String string, char *file, int line){
   if(!output_file) {
-    
+
   }
   fprintf(output_file, "%.*s", string_expand(string));
 }
 
-int 
+int
 main(int argc, char **argv){
   output_file = fopen("asset.log.txt", "a");
   thread_ctx.log_proc = asset_log;
-  
+
   Obj sponza_obj = load_obj(&os_process_heap, "assets/sponza/sponza.obj"_s);
   dump_obj_to_file(&sponza_obj, "sponza.bin"_s);
-  
+
   Obj plane_obj = load_obj(&pernament_arena, "assets/f22.obj"_s);
-  
+
   // Add brick texture as main texture
   Scratch scratch;
   Set_Allocator(scratch);
@@ -451,11 +452,11 @@ main(int argc, char **argv){
   material.texture_ambient = load_image("assets/bricksx64.png"_s);
   plane_obj.materials.add(material);
   For(plane_obj.mesh){
-    IFor(it->indices, jt, j){
-      jt->material_id = 0;
+    For_Named(it.indices, jt){
+      jt.material_id = 0;
     }
   }
-  
+
   dump_obj_to_file(&plane_obj, "plane.bin"_s);
   fclose(output_file);
 }

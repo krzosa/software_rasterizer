@@ -35,13 +35,13 @@ struct UIWidget {
   UIWidget    *prev;
   UIWidget    *first_child;
   UIWidget    *last_child;
-  
+
   String text;
   Vec2 size;
   S32 option_max;
   union {
-    Bitmap *image; 
-    B32    *b32; 
+    Bitmap *image;
+    B32    *b32;
     String     *label;
     S32    *option;
     UISignalCallback *signal_callback;
@@ -50,13 +50,13 @@ struct UIWidget {
 
 struct UI : UIWidget {
   Arena arena;
-  
+
   UIWidget *hot;
   UIWidget *active;
 };
 
 function UIWidget *ui_new_widget(Allocator *arena, UIWidgetKind kind) {
-  UIWidget *result = exp_alloc_type(arena, UIWidget);
+  UIWidget *result = exp_alloc_type(arena, UIWidget, AF_ZeroMemory);
   result->kind = kind;
   return result;
 }
@@ -74,7 +74,7 @@ function UIWidget *ui_push_child(Arena *arena, UIWidget *widget, UIWidgetKind ki
 function UIWidget *ui_push_image(Arena *arena, UIWidget *widget, Bitmap *img) {
   UIWidget *result = ui_push_child(arena, widget, UIWidgetKind_Image);
   result->ptr.image = img;
-  
+
   F32 ratio = (F32)result->ptr.image->x / (F32)result->ptr.image->y;
   result->size.y = 64;
   result->size.x = 64 * ratio;
@@ -148,7 +148,7 @@ function B32 ui_mouse_test(UI *ui, UIWidget *w, Vec4 rect) {
   else if (w == ui->hot) {
     ui->hot = 0;
   }
-  
+
   if (os.key[Key_MouseLeft].released) {
     if (ui->active == w) {
       if (ui->hot == w)
@@ -156,7 +156,7 @@ function B32 ui_mouse_test(UI *ui, UIWidget *w, Vec4 rect) {
       ui->active = 0;
     }
   }
-  
+
   return result;
 }
 

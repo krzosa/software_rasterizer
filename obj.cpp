@@ -27,7 +27,7 @@ struct Obj_Material {
   F32 transparency; // Tr
   F32 optical_density; // Ni
   F32 shininess; // Ns
-  S32 illumination_model; // illum 
+  S32 illumination_model; // illum
   Vec3 ambient_color; // Ka
   Vec3 diffuse_color; // Kd
   Vec3 specular_color; // Ks
@@ -60,27 +60,27 @@ stream_read(Stream *s, SizeU size){
 function Obj *
 load_obj_dump(Allocator *allocator, String filename){
   String string = os_read_file(allocator, filename);
-  
-  Obj *obj = (Obj *)string.str;
-  Stream stream = {(U8 *)(obj+1), string.str + string.len};
+
+  Stream stream = {string.str, string.str + string.len};
+  Obj *obj = stream_read_struct(&stream, Obj);
   obj->name.str = stream_read_array(&stream, U8, obj->name.len);
   obj->vertices.data = stream_read_array(&stream, Vec3, obj->vertices.len);
   obj->texture_coordinates.data = stream_read_array(&stream, Vec2, obj->texture_coordinates.len);
   obj->normals.data = stream_read_array(&stream, Vec3, obj->normals.len);
   obj->mesh.data = stream_read_array(&stream, Obj_Mesh, obj->mesh.len);
   obj->materials.data = stream_read_array(&stream, Obj_Material, obj->materials.len);
-  
-  Iter(obj->mesh){
-    it->indices.data = stream_read_array(&stream, Obj_Index, it->indices.len);
+
+  For(obj->mesh){
+    it.indices.data = stream_read_array(&stream, Obj_Index, it.indices.len);
   }
-  
-  Iter(obj->materials){
-    it->texture_ambient.pixels = stream_read_array(&stream, U32, it->texture_ambient.x*it->texture_ambient.y);
-    it->texture_diffuse.pixels = stream_read_array(&stream, U32, it->texture_diffuse.x*it->texture_diffuse.y);
-    it->texture_dissolve.pixels = stream_read_array(&stream, U32, it->texture_dissolve.x*it->texture_dissolve.y);
-    it->texture_displacement.pixels = stream_read_array(&stream, U32, it->texture_displacement.x*it->texture_displacement.y);
+
+  For(obj->materials){
+    it.texture_ambient.pixels = stream_read_array(&stream, U32, it.texture_ambient.x*it.texture_ambient.y);
+    it.texture_diffuse.pixels = stream_read_array(&stream, U32, it.texture_diffuse.x*it.texture_diffuse.y);
+    it.texture_dissolve.pixels = stream_read_array(&stream, U32, it.texture_dissolve.x*it.texture_dissolve.y);
+    it.texture_displacement.pixels = stream_read_array(&stream, U32, it.texture_displacement.x*it.texture_displacement.y);
   }
-  
+
   return obj;
 }
 
