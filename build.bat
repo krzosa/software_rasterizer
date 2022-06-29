@@ -1,8 +1,8 @@
 @echo off
 
 
-clang assets.cpp -Wall -Wno-unused-function -Wno-missing-braces -fno-exceptions -fdiagnostics-absolute-paths -g -I".." -o assets.exe -Wl,user32.lib
-assets.exe
+rem clang assets.cpp -Wall -Wno-unused-function -Wno-missing-braces -fno-exceptions -fdiagnostics-absolute-paths -g -I".." -o assets.exe -Wl,user32.lib
+rem assets.exe
 rem tracy/TracyClient.cpp -DTRACY_ENABLE
 
 

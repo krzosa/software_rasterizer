@@ -411,7 +411,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   }
 
      // if(os.frame > 10) PROFILE_END(draw_triangle);
-
 }
 
 function
