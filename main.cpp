@@ -84,11 +84,16 @@
 /// - [x] Asset processor as second program
 ///
 ///
+#if 0
+#include "tracy/Tracy.hpp"
+#undef assert
+#endif
 
-#define PREMULTIPLIED_ALPHA_BLENDING 1
 #include "multimedia.cpp"
 #include "profile.cpp"
 #include "obj.cpp"
+
+
 
 struct Vertex {
   Vec3 pos;
@@ -288,7 +293,8 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
                            Vec4 p0,   Vec4 p1,   Vec4 p2,
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
-  if(os.frame > 60) PROFILE_BEGIN(draw_triangle);
+  // if(os.frame > 10) PROFILE_BEGIN(draw_triangle);
+  // ZoneScopedN("draw_triangle");
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
   F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
@@ -322,6 +328,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
     F32 Cx2 = Cy2;
     for (S64 x = min_x; x < max_x; x++) {
       if (Cx0 >= 0 && Cx1 >= 0 && Cx2 >= 0) {
+      // ZoneNamedN(fill, "fill_pixel", true);
         F32 w1 = Cx1 / area;
         F32 w2 = Cx2 / area;
         F32 w3 = Cx0 / area;
@@ -355,7 +362,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
           U32 *dst_pixel = destination + x;
           U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
 
-#if PREMULTIPLIED_ALPHA_BLENDING
           Vec4 result_color; {
             U32 c = *pixel;
             F32 a = ((c & 0xff000000) >> 24) / 255.f;
@@ -378,20 +384,18 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
             dst_color = { r,g,b,a };
           }
 
+#if 0
           Vec3 light_color = vec3(0.8,0.8,1);
           constexpr F32 ambient_strength = 0.1f; {
             Vec3 ambient = ambient_strength * light_color;
             Vec3 diffuse = clamp_bot(0.f, -dot(norm, light_direction)) * light_color;
             result_color.rgb *= (ambient+diffuse);
           }
-
+#endif
 
           result_color = premultiplied_alpha(dst_color, result_color);
           result_color = almost_linear_to_srgb(result_color);
           U32 color32 = vec4_to_u32abgr(result_color);
-#else
-          U32 color32 = *pixel;
-#endif
 
           *dst_pixel = color32;
         }
@@ -406,7 +410,8 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
     destination += dst->x;
   }
 
-  if(os.frame > 60) PROFILE_END(draw_triangle);
+     // if(os.frame > 10) PROFILE_END(draw_triangle);
+
 }
 
 function
@@ -504,7 +509,9 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 li
 
 function
 void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
+  // ZoneNamedN(m, "draw_all_meshes", true);
   for (int i = 0; i < mesh->indices.len; i++) {
+    // ZoneNamedN(m, "draw_single_mesh", true);
     Obj_Index *index = mesh->indices.data + i;
     Bitmap *image = &r->img;
     if(index->material_id != -1) {
@@ -665,7 +672,8 @@ UI_SIGNAL_CALLBACK(scene_callback) {
     } break;
     case Scene_Sponza: {
       speed = 100;
-      r.camera_pos = vec3(0,0,-2);
+      r.camera_pos = vec3(-228,94.5,-107);
+      r.camera_yaw = vec2(-1.25, 0.21);
       obj = sponza;
     } break;
     case Scene_Count:
@@ -686,7 +694,7 @@ main(int argc, char **argv) {
   os.window_size.y = 720;
   os.window_resizable = 1;
   assert(os_init());
-  Font font = os_load_font(os.perm_arena, 72, "Arial", 0);
+  Font font = os_load_font(os.perm_arena, 16, "Arial", 0);
 
   f22 = load_obj_dump(os.perm_arena, "plane.bin"_s);
   sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);
@@ -695,7 +703,8 @@ main(int argc, char **argv) {
   int screen_x = 1280;
   int screen_y = 720;
 
-  r.camera_pos = {0,0,-2};
+  r.camera_pos = vec3(-228,94.5,-107);
+  r.camera_yaw = vec2(-1.25, 0.21);
   r.screen320 = {(U32 *)arena_push_size(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   r.depth320 = (F32 *)arena_push_size(os.perm_arena, sizeof(F32) * screen_x * screen_y);
 
@@ -709,6 +718,7 @@ main(int argc, char **argv) {
   B32 ui_mouse_lock = true;
 
   while (os_game_loop()) {
+    // FrameMark;
     if (ui_mouse_lock == false) {
       r.camera_yaw.x += os.delta_mouse_pos.x * 0.01f;
       r.camera_yaw.y -= os.delta_mouse_pos.y * 0.01f;
@@ -774,7 +784,19 @@ main(int argc, char **argv) {
       }
     }
     ui_end_frame(os.screen, &ui, &font);
-    frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u", os.fps, os.delta_time, os.frame);
+    frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f", os.fps, os.delta_time, os.frame,
+      r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y);
+
+    auto *scope = &profile_scopes[ProfileScopeName_draw_triangle];
+    if(scope->i != 0){
+      U64 total = 0;
+      for(int i = 0; i < scope->i; i++){
+        total += scope->samples[i];
+      }
+
+      log_info("\nTotal: %llu Hits: %llu", total, (U64)scope->i);
+      scope->i = 0;
+    }
   }
 }
 

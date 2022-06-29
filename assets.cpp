@@ -29,7 +29,6 @@ load_image(String path) {
   int x, y, n;
   unsigned char* data = stbi_load_from_memory(file.str, file.len, &x, &y, &n, 4);
   Bitmap result = { (U32*)data, x, y };
-#if PREMULTIPLIED_ALPHA_BLENDING
   if(data) {
     U32 *p = result.pixels;
     for (int Y = 0; Y < y; Y++) {
@@ -42,7 +41,6 @@ load_image(String path) {
       }
     }
   }
-#endif
   return result;
 }
 
@@ -429,9 +427,6 @@ global FILE *output_file;
 
 function void
 asset_log(Log_Kind kind, String string, char *file, int line){
-  if(!output_file) {
-
-  }
   fprintf(output_file, "%.*s", string_expand(string));
 }
 

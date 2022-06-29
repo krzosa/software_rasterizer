@@ -2,6 +2,8 @@
 x64/
 assets/
 stats/
+tracy/
+optick/
 
 data.txt
 *.ilk
@@ -15,3 +17,4 @@ data.txt
 *.sublime*
 *.bin
 *.4c
+asset.log.txt
