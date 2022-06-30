@@ -1,25 +1,48 @@
 enum ProfileScopeName {
   ProfileScopeName_draw_triangle,
+  ProfileScopeName_fill_triangle,
+  ProfileScopeName_draw_all_meshes,
+  ProfileScopeName_draw_mesh,
+  ProfileScopeName_draw_set_of_mesh_indices,
+  ProfileScopeName_main_loop,
   ProfileScopeName_Count,
 };
 
-struct ProfileScope {
-  U64 samples[5096*16];
+const char *profile_scope_names[] = {
+  "draw_triangle",
+  "fill_triangle",
+  "draw_all_meshes",
+  "draw_mesh",
+  "draw_set_of_mesh_indices",
+  "main_loop",
+};
+
+struct ProfileState {
+  U64 samples[5096*32];
   S64 i;
 };
 
-global ProfileScope profile_scopes[ProfileScopeName_Count];
+global ProfileState profile_scopes[ProfileScopeName_Count];
 
-#define PROFILE_BEGIN(name)                                                              \
-  do {                                                                                   \
-    ProfileScope *__profile_scope = profile_scopes + ProfileScopeName_##name;            \
-    __profile_scope->samples[__profile_scope->i] = __rdtsc();                            \
-  } while (0)
+force_inline void
+profile_begin(ProfileScopeName name){
+  ProfileState *p = profile_scopes + name;
+  p->samples[p->i] = __rdtsc();
+}
 
-#define PROFILE_END(name)                                                                \
-  do {                                                                                   \
-    ProfileScope *_profile_scope = profile_scopes + ProfileScopeName_##name;             \
-    _profile_scope->samples[_profile_scope->i] =                                         \
-        __rdtsc() - _profile_scope->samples[_profile_scope->i];                          \
-    _profile_scope->i = (_profile_scope->i + 1) % 5096*16;                                  \
-  } while (0)
+force_inline void
+profile_end(ProfileScopeName name){
+  ProfileState *p = profile_scopes + name;
+  p->samples[p->i] = __rdtsc() - p->samples[p->i];
+  p->i = (p->i + 1) % buff_cap(p->samples);
+}
+
+struct Profile_Scope{
+  ProfileScopeName n;
+  force_inline Profile_Scope(ProfileScopeName name){ profile_begin(name); n=name; }
+  force_inline ~Profile_Scope(){ profile_end(n); }
+};
+
+#define PROFILE_BEGIN(name) profile_begin(ProfileScopeName_##name)
+#define PROFILE_END(name) profile_end(ProfileScopeName_##name)
+#define PROFILE_SCOPE(name) Profile_Scope profile_scope_##__LINE__(ProfileScopeName_##name)
