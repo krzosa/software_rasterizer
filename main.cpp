@@ -89,11 +89,11 @@
 #undef assert
 #endif
 
+
 #include "multimedia.cpp"
 #include "profile.cpp"
 #include "obj.cpp"
-
-
+#include "vec.cpp"
 
 struct Vertex {
   Vec3 pos;
@@ -294,6 +294,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
                            Vec4 p0,   Vec4 p1,   Vec4 p2,
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
+  if(src->pixels == 0) return;
   PROFILE_SCOPE(draw_triangle);
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
@@ -429,6 +430,7 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
         image = &material->texture_ambient;
       }
     }
+
     Vertex vert[] = {
       {
         vertices[index->vertex[0] - 1],
@@ -518,13 +520,16 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
           F32 t = prev_dot / (prev_dot - curr_dot);
           in[in_count].pos = vec4(lerp(prev->pos, curr->pos, t), 1);
           in[in_count].tex = lerp(prev->tex, curr->tex, t);
-          in[in_count++].norm = lerp(prev->norm, curr->norm, t);
+          in[in_count].norm = lerp(prev->norm, curr->norm, t);
+          in_count += 1;
         }
+
         if (curr_dot > 0) {
           in[in_count].pos = vec4(vert[j].pos, 1);
           in[in_count].tex = vert[j].tex;
           in[in_count++].norm = vert[j].norm;
         }
+
         prev = curr++;
         prev_dot = curr_dot;
       }
@@ -610,6 +615,8 @@ main(int argc, char **argv) {
 
   f22 = load_obj_dump(os.perm_arena, "plane.bin"_s);
   sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);
+   // Obj sponza_obj = load_obj(&os_process_heap, "assets/sponza/sponza.obj"_s);
+  // sponza = &sponza_obj;
   scene_callback();
 
   int screen_x = 1280;
@@ -654,19 +661,21 @@ main(int argc, char **argv) {
     }
     if (os.key[Key_R].down) r.camera_pos.y += speed * (F32)os.delta_time;
     if (os.key[Key_F].down) r.camera_pos.y -= speed * (F32)os.delta_time;
+
+    // Clear screen and depth buffer
     U32* p = r.screen320.pixels;
     for (int y = 0; y < r.screen320.y; y++) {
       for (int x = 0; x < r.screen320.x; x++) {
         *p++ = 0x33333333;
       }
     }
+
     F32* dp = r.depth320;
     for (int y = 0; y < r.screen320.y; y++) {
       for (int x = 0; x < r.screen320.x; x++) {
         *dp++ = -F32MAX;
       }
     }
-
 
     Mat4 camera_rotation = mat4_rotation_y(r.camera_yaw.x) * mat4_rotation_x(r.camera_yaw.y);
     r.camera_direction = (camera_rotation * vec4(0,0,1,1)).xyz;
@@ -696,6 +705,7 @@ main(int argc, char **argv) {
         *ptr++ = r.screen320.pixels[tx + ty * (r.screen320.x)];
       }
     }
+
     ui_end_frame(os.screen, &ui, &font);
     frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f", os.fps, os.delta_time, os.frame,
       r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y);

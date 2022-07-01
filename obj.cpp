@@ -64,8 +64,8 @@ load_obj_dump(Allocator *allocator, String filename){
   Stream stream = {string.str, string.str + string.len};
   Obj *obj = stream_read_struct(&stream, Obj);
   obj->name.str = stream_read_array(&stream, U8, obj->name.len);
-  obj->vertices.data = stream_read_array(&stream, Vec3, obj->vertices.len);
   obj->texture_coordinates.data = stream_read_array(&stream, Vec2, obj->texture_coordinates.len);
+  obj->vertices.data = stream_read_array(&stream, Vec3, obj->vertices.len);
   obj->normals.data = stream_read_array(&stream, Vec3, obj->normals.len);
   obj->mesh.data = stream_read_array(&stream, Obj_Mesh, obj->mesh.len);
   obj->materials.data = stream_read_array(&stream, Obj_Material, obj->materials.len);

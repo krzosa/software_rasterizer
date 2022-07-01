@@ -5,6 +5,7 @@ enum ProfileScopeName {
   ProfileScopeName_draw_mesh,
   ProfileScopeName_draw_set_of_mesh_indices,
   ProfileScopeName_main_loop,
+  ProfileScopeName_fill_triangle_after_depth_test,
   ProfileScopeName_Count,
 };
 
@@ -15,6 +16,7 @@ const char *profile_scope_names[] = {
   "draw_mesh",
   "draw_set_of_mesh_indices",
   "main_loop",
+  "fill_triangle_after_depth_test",
 };
 
 struct ProfileState {
