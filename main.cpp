@@ -295,6 +295,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
+
   PROFILE_SCOPE(draw_triangle);
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
@@ -305,6 +306,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   S64 min_y = (S64)max(0.f, floor(min_y1));
   S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
   S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
+
+  if (min_y >= max_y) return;
+  if (min_x >= max_x) return;
 
   F32 dy10 = (p1.y - p0.y);
   F32 dy21 = (p2.y - p1.y);
@@ -322,89 +326,110 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
   F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
 
+  Vec8 Cx0;
+  Vec8 Cx1;
+  Vec8 Cx2;
+
+  Vec8I var07i = vec8i(0,1,2,3,4,5,6,7);
+  Vec8 var07 = vec8(0,1,2,3,4,5,6,7);
+  Vec8 Dy10 = vec8(dy10) * var07;
+  Vec8 Dy21 = vec8(dy21) * var07;
+  Vec8 Dy02 = vec8(dy02) * var07;
+  Vec8 w0, w1, w2, invw0, invw1, invw2, u, v, interpolated_w;
+  Vec8I ui, vi;
+
   U32 *destination = dst->pixels + dst->x*min_y;
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   for (S64 y = min_y; y < max_y; y++) {
-    F32 Cx0 = Cy0;
-    F32 Cx1 = Cy1;
-    F32 Cx2 = Cy2;
-    for (S64 x = min_x; x < max_x; x++) {
-      if (Cx0 >= 0 && Cx1 >= 0 && Cx2 >= 0) {
-        PROFILE_SCOPE(fill_triangle);
-        F32 w1 = Cx1 / area;
-        F32 w2 = Cx2 / area;
-        F32 w3 = Cx0 / area;
+    Cx0 = vec8(Cy0);
+    Cx1 = vec8(Cy1);
+    Cx2 = vec8(Cy2);
 
-        // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
-        // but why waste an instruction, the smaller the depth value the farther the object
-        F32 interpolated_w = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
-        F32* depth = depth_buffer + (x + y * dst->x);
-        if (*depth < interpolated_w) {
-          *depth = interpolated_w;
-          F32 invw0 = (w1 / p0.w);
-          F32 invw1 = (w2 / p1.w);
-          F32 invw2 = (w3 / p2.w);
+    for (S64 x8 = min_x; x8 < max_x; x8+=8) {
+      PROFILE_SCOPE(fill_triangle_outer);
+      Cx0 = vec8(Cx0[7]) + Dy10;
+      Cx1 = vec8(Cx1[7]) + Dy21;
+      Cx2 = vec8(Cx2[7]) + Dy02;
 
-          Vec3 norm = (norm0 * invw0 + norm1 * invw1 + norm2 * invw2) / interpolated_w;
-          F32 u = tex0.x * invw0 + tex1.x * invw1 + tex2.x * invw2;
-          F32 v = tex0.y * invw0 + tex1.y * invw1 + tex2.y * invw2;
-          {
-            u /= interpolated_w;
-            v /= interpolated_w;
-            u = u - floor(u);
-            v = v - floor(v);
-            u = u * (src->x - 1);
-            v = v * (src->y - 1);
+
+      Vec8I x = vec8i(x8) + var07i;
+      for(S64 i = 0; i < 8; i++){
+        PROFILE_SCOPE(fill_triangle_inner);
+        if (Cx0[i] >= 0 && Cx1[i] >= 0 && Cx2[i] >= 0) {
+          w0[i] = Cx1[i] / area;
+          w1[i] = Cx2[i] / area;
+          w2[i] = Cx0[i] / area;
+
+          // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
+          // but why waste an instruction, the smaller the depth value the farther the object
+          interpolated_w[i] = (1.f / p0.w) * w0[i] + (1.f / p1.w) * w1[i] + (1.f / p2.w) * w2[i];
+          F32* depth = depth_buffer + (x[i] + y * dst->x);
+          if (*depth < interpolated_w[i]) {
+            PROFILE_SCOPE(fill_triangle_after_depth_test);
+            *depth = interpolated_w[i];
+            invw0[i] = (w0[i] / p0.w);
+            invw1[i] = (w1[i] / p1.w);
+            invw2[i] = (w2[i] / p2.w);
+
+            Vec3 norm = (norm0 * invw0[i] + norm1 * invw1[i] + norm2 * invw2[i]) / interpolated_w[i];
+            u[i] = tex0.x * invw0[i] + tex1.x * invw1[i] + tex2.x * invw2[i];
+            v[i] = tex0.y * invw0[i] + tex1.y * invw1[i] + tex2.y * invw2[i];
+            {
+              u[i] /= interpolated_w[i];
+              v[i] /= interpolated_w[i];
+              u[i] = u[i] - floor(u[i]);
+              v[i] = v[i] - floor(v[i]);
+              u[i] = u[i] * (src->x - 1);
+              v[i] = v[i] * (src->y - 1);
+            }
+            ui[i] = (S64)(u[i]);
+            vi[i] = (S64)(v[i]);
+            //F32 udiff = u - (F32)ui;
+            //F32 vdiff = v - (F32)vi;
+            // Origin UV (0,0) is in bottom left
+            U32 *dst_pixel = destination + x[i];
+            U32 *pixel = src->pixels + (ui[i] + (src->y - 1ll - vi[i]) * src->x);
+
+            Vec4 result_color; {
+              U32 c = *pixel;
+              F32 a = ((c & 0xff000000) >> 24) / 255.f;
+              F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
+              F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
+              F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
+              r*=r;
+              g*=g;
+              b*=b;
+              result_color = { r,g,b,a };
+            }
+
+            Vec4 dst_color; {
+              U32 c = *dst_pixel;
+              F32 a = ((c & 0xff000000) >> 24) / 255.f;
+              F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
+              F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
+              F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
+              r*=r; g*=g; b*=b;
+              dst_color = { r,g,b,a };
+            }
+
+  #if 0
+            Vec3 light_color = vec3(0.8,0.8,1);
+            constexpr F32 ambient_strength = 0.1f; {
+              Vec3 ambient = ambient_strength * light_color;
+              Vec3 diffuse = clamp_bot(0.f, -dot(norm, light_direction)) * light_color;
+              result_color.rgb *= (ambient+diffuse);
+            }
+  #endif
+
+            result_color = premultiplied_alpha(dst_color, result_color);
+            result_color = almost_linear_to_srgb(result_color);
+            U32 color32 = vec4_to_u32abgr(result_color);
+
+            *dst_pixel = color32;
           }
-          S64 ui = (S64)(u);
-          S64 vi = (S64)(v);
-          //F32 udiff = u - (F32)ui;
-          //F32 vdiff = v - (F32)vi;
-          // Origin UV (0,0) is in bottom left
-          U32 *dst_pixel = destination + x;
-          U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
-
-          Vec4 result_color; {
-            U32 c = *pixel;
-            F32 a = ((c & 0xff000000) >> 24) / 255.f;
-            F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-            F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-            F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-            r*=r;
-            g*=g;
-            b*=b;
-            result_color = { r,g,b,a };
-          }
-
-          Vec4 dst_color; {
-            U32 c = *dst_pixel;
-            F32 a = ((c & 0xff000000) >> 24) / 255.f;
-            F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-            F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-            F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-            r*=r; g*=g; b*=b;
-            dst_color = { r,g,b,a };
-          }
-
-#if 0
-          Vec3 light_color = vec3(0.8,0.8,1);
-          constexpr F32 ambient_strength = 0.1f; {
-            Vec3 ambient = ambient_strength * light_color;
-            Vec3 diffuse = clamp_bot(0.f, -dot(norm, light_direction)) * light_color;
-            result_color.rgb *= (ambient+diffuse);
-          }
-#endif
-
-          result_color = premultiplied_alpha(dst_color, result_color);
-          result_color = almost_linear_to_srgb(result_color);
-          U32 color32 = vec4_to_u32abgr(result_color);
-
-          *dst_pixel = color32;
         }
       }
-      Cx0 += dy10;
-      Cx1 += dy21;
-      Cx2 += dy02;
+
     }
     Cy0 -= dx10;
     Cy1 -= dx21;
