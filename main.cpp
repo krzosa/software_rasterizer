@@ -373,26 +373,20 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
       u = vec8(tex0.x) * invw0 + vec8(tex1.x) * invw1 + vec8(tex2.x) * invw2;
       v = vec8(tex0.y) * invw0 + vec8(tex1.y) * invw1 + vec8(tex2.y) * invw2;
+      u /= interpolated_w;
+      v /= interpolated_w;
+      u = u - floor8(u);
+      v = v - floor8(v);
+      u = u * vec8(src->x - 1);
+      v = v * vec8(src->y - 1);
+      ui = convert_vec8_to_vec8i(u);
+      vi = convert_vec8_to_vec8i(v);
 
       for(S64 i = 0; i < 8; i++){
         if (should_fill[i]){
           PROFILE_SCOPE(fill_triangle_after_depth_test);
           depth_pointer[i] = interpolated_w[i];
 
-          // Vec3 norm = (norm0 * invw0[i] + norm1 * invw1[i] + norm2 * invw2[i]) / interpolated_w[i];
-
-          {
-            u[i] /= interpolated_w[i];
-            v[i] /= interpolated_w[i];
-            u[i] = u[i] - floor(u[i]);
-            v[i] = v[i] - floor(v[i]);
-            u[i] = u[i] * (src->x - 1);
-            v[i] = v[i] * (src->y - 1);
-          }
-          ui[i] = (S64)(u[i]);
-          vi[i] = (S64)(v[i]);
-          //F32 udiff = u - (F32)ui;
-          //F32 vdiff = v - (F32)vi;
           // Origin UV (0,0) is in bottom left
           U32 *dst_pixel = destination + x[i];
           U32 *pixel = src->pixels + (ui[i] + (src->y - 1ll - vi[i]) * src->x);
