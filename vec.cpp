@@ -15,6 +15,11 @@ Vec8 operator*(Vec8 a, Vec8 b){ return {_mm256_mul_ps(a.simd, b.simd)}; }
 Vec8 operator/(Vec8 a, Vec8 b){ return {_mm256_div_ps(a.simd, b.simd)}; }
 Vec8 operator+=(Vec8 &a, Vec8 b){ a = a + b; return a; }
 Vec8 operator-=(Vec8 &a, Vec8 b){ a = a - b; return a; }
+Vec8 operator>=(Vec8 a, Vec8 b){ return {_mm256_cmp_ps(a.simd, b.simd, _CMP_GE_OQ)}; }
+Vec8 operator<=(Vec8 a, Vec8 b){ return {_mm256_cmp_ps(a.simd, b.simd, _CMP_LE_OQ)}; }
+// Vec8 operator<(Vec8 a, Vec8 b){ return {_mm256_cmp_ps(a.simd, b.simd, _CMP_LE)}; }
+// Vec8 operator>(Vec8 a, Vec8 b){ return {_mm256_cmp_ps(a.simd, b.simd, _CMP_GE)}; }
+Vec8 operator&(Vec8 a, Vec8 b){ return {_mm256_and_ps(a.simd, b.simd)}; }
 
 union Vec8I{
   __m256i simd;

@@ -335,11 +335,12 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   Vec8 Dy10 = vec8(dy10) * var07;
   Vec8 Dy21 = vec8(dy21) * var07;
   Vec8 Dy02 = vec8(dy02) * var07;
-  Vec8 w0, w1, w2, invw0, invw1, invw2, u, v, interpolated_w;
+  Vec8 w0, w1, w2, invw0, invw1, invw2, u, v, interpolated_w, should_fill;
   Vec8I ui, vi;
 
   U32 *destination = dst->pixels + dst->x*min_y;
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
+  Vec8 area8 = vec8(area);
   for (S64 y = min_y; y < max_y; y++) {
     Cx0 = vec8(Cy0);
     Cx1 = vec8(Cy1);
@@ -353,16 +354,20 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
 
       Vec8I x = vec8i(x8) + var07i;
-      for(S64 i = 0; i < 8; i++){
-        PROFILE_SCOPE(fill_triangle_inner);
-        if (Cx0[i] >= 0 && Cx1[i] >= 0 && Cx2[i] >= 0) {
-          w0[i] = Cx1[i] / area;
-          w1[i] = Cx2[i] / area;
-          w2[i] = Cx0[i] / area;
+      should_fill = Cx0 >= vec8(0) & Cx1 >= vec8(0) & Cx2 >= vec8(0);
+      w0 = Cx1 / area8;
+      w1 = Cx2 / area8;
+      w2 = Cx0 / area8;
 
-          // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
-          // but why waste an instruction, the smaller the depth value the farther the object
-          interpolated_w[i] = (1.f / p0.w) * w0[i] + (1.f / p1.w) * w1[i] + (1.f / p2.w) * w2[i];
+      // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
+      // but why waste an instruction, the smaller the depth value the farther the object
+      interpolated_w = vec8(1.f / p0.w) * w0 + vec8(1.f / p1.w) * w1 + vec8(1.f / p2.w) * w2;
+      // Vec8 *depth = (Vec8 *)(depth_buffer + (x8 + y * dst->x));
+      // should_fill = should_fill & (*depth < interpolated_w);
+
+      for(S64 i = 0; i < 8; i++){
+        if (should_fill[i]){
+
           F32* depth = depth_buffer + (x[i] + y * dst->x);
           if (*depth < interpolated_w[i]) {
             PROFILE_SCOPE(fill_triangle_after_depth_test);
@@ -371,7 +376,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
             invw1[i] = (w1[i] / p1.w);
             invw2[i] = (w2[i] / p2.w);
 
-            Vec3 norm = (norm0 * invw0[i] + norm1 * invw1[i] + norm2 * invw2[i]) / interpolated_w[i];
+            // Vec3 norm = (norm0 * invw0[i] + norm1 * invw1[i] + norm2 * invw2[i]) / interpolated_w[i];
             u[i] = tex0.x * invw0[i] + tex1.x * invw1[i] + tex2.x * invw2[i];
             v[i] = tex0.y * invw0[i] + tex1.y * invw1[i] + tex2.y * invw2[i];
             {
