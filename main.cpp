@@ -331,7 +331,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   Vec8 Dy10 = vec8(dy10) * var07;
   Vec8 Dy21 = vec8(dy21) * var07;
   Vec8 Dy02 = vec8(dy02) * var07;
-  Vec8 w0, w1, w2, invw0, invw1, invw2, u, v, interpolated_w, should_fill;
+  Vec8 w0, w1, w2, invw0, invw1, invw2, u, v, interpolated_w;
   Vec8I ui, vi;
 
   U32 *destination = dst->pixels + dst->x*min_y;
@@ -349,7 +349,15 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       Cx2 = vec8(Cx2[7]) + Dy02;
 
 
-      should_fill = Cx0 >= vec8(0) & Cx1 >= vec8(0) & Cx2 >= vec8(0);
+
+      Vec8 should_fill;
+      {
+        Vec8 a = (vec8(x8) + var07);
+        Vec8 b = vec8(max_x);
+        should_fill = a < b;
+        should_fill = should_fill & (Cx0 >= vec8(0) & Cx1 >= vec8(0) & Cx2 >= vec8(0));
+      }
+
       w0 = Cx1 / area8;
       w1 = Cx2 / area8;
       w2 = Cx0 / area8;
@@ -361,6 +369,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       F32 *depth_pointer = (depth_buffer + (x8 + y * dst->x));
       Vec8 depth = loadu8(depth_pointer);
       should_fill = should_fill & (depth < interpolated_w);
+
 
       invw0 = (w0 / vec8(p0.w));
       invw1 = (w1 / vec8(p1.w));
@@ -378,17 +387,26 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       vi = convert_vec8_to_vec8i(v);
 
       // Origin UV (0,0) is in bottom left
-      U32 *dst_pixel = destination + x8;
+      _mm256_maskstore_epi32((int *)depth_pointer, should_fill.simd, interpolated_w.simd);
+      Vec8I indices = ui + ((vec8i(src->y) - vec8i(1) - vi) * vec8i(src->x));
+      U32 *pixel[8] = {
+        src->pixels + indices.e[0],
+        src->pixels + indices.e[1],
+        src->pixels + indices.e[2],
+        src->pixels + indices.e[3],
+        src->pixels + indices.e[4],
+        src->pixels + indices.e[5],
+        src->pixels + indices.e[6],
+        src->pixels + indices.e[7],
+      };
 
+      U32 *dst_pixel = destination + x8;
       for(S64 i = 0; i < 8; i++){
         if (should_fill[i]){
           PROFILE_SCOPE(fill_triangle_after_depth_test);
-          depth_pointer[i] = interpolated_w[i];
-
-          U32 *pixel = src->pixels + (ui[i] + (src->y - 1ll - vi[i]) * src->x);
 
           Vec4 result_color; {
-            U32 c = *pixel;
+            U32 c = *pixel[i];
             F32 a = ((c & 0xff000000) >> 24) / 255.f;
             F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
             F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
@@ -652,7 +670,7 @@ main(int argc, char **argv) {
   os.window_size.y = 720;
   os.window_resizable = 1;
   assert(os_init());
-  Font font = os_load_font(os.perm_arena, 16, "Arial", 0);
+  Font font = os_load_font(os.perm_arena, 12*os.dpi_scale, "Arial", 0);
 
   f22 = load_obj_dump(os.perm_arena, "plane.bin"_s);
   sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);

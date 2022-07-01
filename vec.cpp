@@ -36,9 +36,14 @@ union Vec8I{
 
 Vec8I vec8i(S32 x){return {_mm256_set1_epi32(x)}; }
 Vec8I vec8i(S32 a, S32 b, S32 c, S32 d, S32 e, S32 f, S32 g, S32 h){ return {_mm256_set_epi32(h, g, f, e, d, c, b, a)}; }
+Vec8I operator>(Vec8I a, Vec8I b){
+  return {_mm256_cmpgt_epi32(a.simd, b.simd)};
+}
 Vec8I operator+(Vec8I a, Vec8I b){ return {_mm256_add_epi32(a.simd, b.simd)}; }
 Vec8I operator-(Vec8I a, Vec8I b){ return {_mm256_sub_epi32(a.simd, b.simd)}; }
-Vec8I operator*(Vec8I a, Vec8I b){ return {_mm256_mul_epi32(a.simd, b.simd)}; }
+Vec8I operator*(Vec8I a, Vec8I b){
+  return {_mm256_mullo_epi32(a.simd, b.simd)};  //_mm256_mul_epi32
+}
 // Vec8I operator/(Vec8I a, Vec8I b){ return {_mm256_div_epi32(a.simd, b.simd)}; }
 Vec8I operator+=(Vec8I &a, Vec8I b){ return a + b; }
 
