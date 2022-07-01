@@ -326,10 +326,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
   F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
 
-  Vec8 Cx0;
-  Vec8 Cx1;
-  Vec8 Cx2;
-
   Vec8I var07i = vec8i(0,1,2,3,4,5,6,7);
   Vec8 var07 = vec8(0,1,2,3,4,5,6,7);
   Vec8 Dy10 = vec8(dy10) * var07;
@@ -342,9 +338,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   Vec8 area8 = vec8(area);
   for (S64 y = min_y; y < max_y; y++) {
-    Cx0 = vec8(Cy0);
-    Cx1 = vec8(Cy1);
-    Cx2 = vec8(Cy2);
+    Vec8 Cx0 = vec8(Cy0);
+    Vec8 Cx1 = vec8(Cy1);
+    Vec8 Cx2 = vec8(Cy2);
 
     for (S64 x8 = min_x; x8 < max_x; x8+=8) {
       PROFILE_SCOPE(fill_triangle_outer);
@@ -353,7 +349,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       Cx2 = vec8(Cx2[7]) + Dy02;
 
 
-      Vec8I x = vec8i(x8) + var07i;
       should_fill = Cx0 >= vec8(0) & Cx1 >= vec8(0) & Cx2 >= vec8(0);
       w0 = Cx1 / area8;
       w1 = Cx2 / area8;
@@ -382,13 +377,14 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       ui = convert_vec8_to_vec8i(u);
       vi = convert_vec8_to_vec8i(v);
 
+      // Origin UV (0,0) is in bottom left
+      U32 *dst_pixel = destination + x8;
+
       for(S64 i = 0; i < 8; i++){
         if (should_fill[i]){
           PROFILE_SCOPE(fill_triangle_after_depth_test);
           depth_pointer[i] = interpolated_w[i];
 
-          // Origin UV (0,0) is in bottom left
-          U32 *dst_pixel = destination + x[i];
           U32 *pixel = src->pixels + (ui[i] + (src->y - 1ll - vi[i]) * src->x);
 
           Vec4 result_color; {
@@ -404,7 +400,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
           }
 
           Vec4 dst_color; {
-            U32 c = *dst_pixel;
+            U32 c = dst_pixel[i];
             F32 a = ((c & 0xff000000) >> 24) / 255.f;
             F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
             F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
@@ -422,11 +418,31 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
           }
 #endif
 
-          result_color = premultiplied_alpha(dst_color, result_color);
-          result_color = almost_linear_to_srgb(result_color);
-          U32 color32 = vec4_to_u32abgr(result_color);
+          // Premultiplied alpha
+          {
+            result_color.r = result_color.r + ((1-result_color.a) * dst_color.r);
+            result_color.g = result_color.g + ((1-result_color.a) * dst_color.g);
+            result_color.b = result_color.b + ((1-result_color.a) * dst_color.b);
+            result_color.a = result_color.a + dst_color.a - result_color.a*dst_color.a;
+          }
 
-          *dst_pixel = color32;
+          // Almost linear to srgb
+          {
+            result_color.r = sqrtf(result_color.r);
+            result_color.g = sqrtf(result_color.g);
+            result_color.b = sqrtf(result_color.b);
+          }
+
+          U32 color32;
+          {
+            U8 red     = (U8)(result_color.r * 255);
+            U8 green   = (U8)(result_color.g * 255);
+            U8 blue    = (U8)(result_color.b * 255);
+            U8 alpha   = (U8)(result_color.a * 255);
+            color32 = (U32)(alpha << 24 | blue << 16 | green << 8 | red << 0);
+          }
+
+          dst_pixel[i] = color32;
         }
       }
 
