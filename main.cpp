@@ -289,6 +289,7 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
 }
 
 // #include "optimization_log.cpp"
+
 function
 void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
                            Vec4 p0,   Vec4 p1,   Vec4 p2,
@@ -326,11 +327,13 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
   F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
 
+  Vec8 zero8 = vec8(0);
   Vec8I var07i = vec8i(0,1,2,3,4,5,6,7);
   Vec8 var07 = vec8(0,1,2,3,4,5,6,7);
-  Vec8 Dy10 = vec8(dy10) * var07;
-  Vec8 Dy21 = vec8(dy21) * var07;
-  Vec8 Dy02 = vec8(dy02) * var07;
+  Vec8 var1_8 = vec8(1,2,3,4,5,6,7,8);
+  Vec8 Dy10 = vec8(dy10) * var1_8;
+  Vec8 Dy21 = vec8(dy21) * var1_8;
+  Vec8 Dy02 = vec8(dy02) * var1_8;
   Vec8 w0, w1, w2, invw0, invw1, invw2, u, v, interpolated_w;
   Vec8I ui, vi;
 
@@ -355,7 +358,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
         Vec8 a = (vec8(x8) + var07);
         Vec8 b = vec8(max_x);
         should_fill = a < b;
-        should_fill = should_fill & (Cx0 >= vec8(0) & Cx1 >= vec8(0) & Cx2 >= vec8(0));
+        should_fill = should_fill & (Cx0 >= zero8 & Cx1 >= zero8 & Cx2 >= zero8);
       }
 
       w0 = Cx1 / area8;
@@ -616,10 +619,6 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
       if (in_count > 3) {
         draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
       }
-
-
-
-
     }
   }
 }
