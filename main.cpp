@@ -463,6 +463,21 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       dst_g *= dst_g;
       dst_b *= dst_b;
 
+      // Premultiplied alpha
+      {
+        texel_r = texel_r + ((vec8(1)-texel_a) * dst_r);
+        texel_g = texel_g + ((vec8(1)-texel_a) * dst_g);
+        texel_b = texel_b + ((vec8(1)-texel_a) * dst_b);
+        texel_a = texel_a + dst_a - texel_a*dst_a;
+      }
+
+      // Almost linear to srgb
+      {
+        texel_r.simd = {_mm256_sqrt_ps(texel_r.simd)};
+        texel_g.simd = {_mm256_sqrt_ps(texel_g.simd)};
+        texel_b.simd = {_mm256_sqrt_ps(texel_b.simd)};
+      }
+
       for(S64 i = 0; i < 8; i++){
         if (should_fill[i]){
           Vec4 result_color = {texel_r[i], texel_g[i], texel_b[i], texel_a[i]};
@@ -477,20 +492,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
           }
 #endif
 
-          // Premultiplied alpha
-          {
-            result_color.r = result_color.r + ((1-result_color.a) * dst_color.r);
-            result_color.g = result_color.g + ((1-result_color.a) * dst_color.g);
-            result_color.b = result_color.b + ((1-result_color.a) * dst_color.b);
-            result_color.a = result_color.a + dst_color.a - result_color.a*dst_color.a;
-          }
-
-          // Almost linear to srgb
-          {
-            result_color.r = sqrtf(result_color.r);
-            result_color.g = sqrtf(result_color.g);
-            result_color.b = sqrtf(result_color.b);
-          }
 
           U32 color32;
           {
