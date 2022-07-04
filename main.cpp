@@ -396,56 +396,77 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       indices.simd = _mm256_min_epi32(_mm256_set1_ps(size), indices.simd);
       indices.simd = _mm256_max_epi32(_mm256_set1_ps(0), indices.simd);
 
-      U32 pixel[8] = {};
-      if(should_fill[0]) pixel[0] = src->pixels[indices.e[0]];
-      if(should_fill[1]) pixel[1] = src->pixels[indices.e[1]];
-      if(should_fill[2]) pixel[2] = src->pixels[indices.e[2]];
-      if(should_fill[3]) pixel[3] = src->pixels[indices.e[3]];
-      if(should_fill[4]) pixel[4] = src->pixels[indices.e[4]];
-      if(should_fill[5]) pixel[5] = src->pixels[indices.e[5]];
-      if(should_fill[6]) pixel[6] = src->pixels[indices.e[6]];
-      if(should_fill[7]) pixel[7] = src->pixels[indices.e[7]];
-      // Vec8I *pixelv = (Vec8I *)pixel;
+      //
+      // Fetch and calculate texel values
+      //
+      Vec8I pixel;
+      if(should_fill[0]) pixel.e[0] = src->pixels[indices.e[0]];
+      if(should_fill[1]) pixel.e[1] = src->pixels[indices.e[1]];
+      if(should_fill[2]) pixel.e[2] = src->pixels[indices.e[2]];
+      if(should_fill[3]) pixel.e[3] = src->pixels[indices.e[3]];
+      if(should_fill[4]) pixel.e[4] = src->pixels[indices.e[4]];
+      if(should_fill[5]) pixel.e[5] = src->pixels[indices.e[5]];
+      if(should_fill[6]) pixel.e[6] = src->pixels[indices.e[6]];
+      if(should_fill[7]) pixel.e[7] = src->pixels[indices.e[7]];
 
-      // Vec8I texel_i_a = *pixelv & vec8i(0xff000000);
-      // Vec8I texel_i_b = *pixelv & vec8i(0x00ff0000);
-      // Vec8I texel_i_g = *pixelv & vec8i(0x0000ff00);
-      // Vec8I texel_i_r = *pixelv & vec8i(0x000000ff);
+      Vec8I texel_i_a = pixel & vec8i(0xff000000);
+      Vec8I texel_i_b = pixel & vec8i(0x00ff0000);
+      Vec8I texel_i_g = pixel & vec8i(0x0000ff00);
+      Vec8I texel_i_r = pixel & vec8i(0x000000ff);
 
-      // Vec8 texel_a = convert_vec8i_to_vec8(texel_i_a >> 24) / vec8(255.f);
-      // Vec8 texel_b = convert_vec8i_to_vec8(texel_i_b >> 16) / vec8(255.f);
-      // Vec8 texel_g = convert_vec8i_to_vec8(texel_i_g >> 8 ) / vec8(255.f);
-      // Vec8 texel_r = convert_vec8i_to_vec8(texel_i_r >> 0 ) / vec8(255.f);
+      // Alpha is done this way because signed integer shift is weird
+      // When sign bit is set it sets all bits that we shift the sign through
+      // So first we shift
+      texel_i_a = (texel_i_a >> 24);
+      texel_i_a = texel_i_a & vec8i(0x000000ff);
+      texel_i_b = (texel_i_b >> 16);
+      texel_i_g = (texel_i_g >> 8 );
+      texel_i_r = (texel_i_r >> 0 );
 
-      // texel_r = texel_r * texel_r;
-      // texel_g = texel_g * texel_g;
-      // texel_b = texel_b * texel_b;
+      Vec8 texel_a = convert_vec8i_to_vec8(texel_i_a);
+      Vec8 texel_b = convert_vec8i_to_vec8(texel_i_b);
+      Vec8 texel_g = convert_vec8i_to_vec8(texel_i_g);
+      Vec8 texel_r = convert_vec8i_to_vec8(texel_i_r);
 
-      U32 *dst_pixel = destination + x8;
+      Vec8 v255 = vec8(255.f);
+      texel_a = texel_a / v255;
+      texel_b = texel_b / v255;
+      texel_g = texel_g / v255;
+      texel_r = texel_r / v255;
+
+      texel_r = texel_r * texel_r;
+      texel_g = texel_g * texel_g;
+      texel_b = texel_b * texel_b;
+
+      //
+      // Fetch and calculate dst pixels
+      //
+      U32 *dst_memory = destination + x8;
+      Vec8I dst_pixel = {_mm256_maskload_epi32((const int *)dst_memory, should_fill.simd)};
+
+      Vec8I dst_i_a = dst_pixel & vec8i(0xff000000);
+      Vec8I dst_i_b = dst_pixel & vec8i(0x00ff0000);
+      Vec8I dst_i_g = dst_pixel & vec8i(0x0000ff00);
+      Vec8I dst_i_r = dst_pixel & vec8i(0x000000ff);
+
+      dst_i_a = dst_i_a >> 24;
+      dst_i_a = dst_i_a &  vec8i(0x000000ff);
+      dst_i_b = dst_i_b >> 16 ;
+      dst_i_g = dst_i_g >> 8;
+
+      Vec8 dst_a = convert_vec8i_to_vec8(dst_i_a) / vec8(255);
+      Vec8 dst_b = convert_vec8i_to_vec8(dst_i_b) / vec8(255);
+      Vec8 dst_g = convert_vec8i_to_vec8(dst_i_g) / vec8(255);
+      Vec8 dst_r = convert_vec8i_to_vec8(dst_i_r) / vec8(255);
+
+      dst_r *= dst_r;
+      dst_g *= dst_g;
+      dst_b *= dst_b;
+
       for(S64 i = 0; i < 8; i++){
         if (should_fill[i]){
-          Vec4 result_color;// = {texel_r[i], texel_g[i], texel_b[i], texel_a[i]};
-           {
-            U32 c = pixel[i];
-            F32 a = ((c & 0xff000000) >> 24) / 255.f;
-            F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-            F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-            F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-            r*=r;
-            g*=g;
-            b*=b;
-            result_color = { r,g,b,a };
-          }
-
-          Vec4 dst_color; {
-            U32 c = dst_pixel[i];
-            F32 a = ((c & 0xff000000) >> 24) / 255.f;
-            F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-            F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-            F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-            r*=r; g*=g; b*=b;
-            dst_color = { r,g,b,a };
-          }
+          Vec4 result_color = {texel_r[i], texel_g[i], texel_b[i], texel_a[i]};
+          Vec4 dst_color = {dst_r[i], dst_g[i], dst_b[i], dst_a[i]};
 
 #if 0
           Vec3 light_color = vec3(0.8,0.8,1);
@@ -480,7 +501,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
             color32 = (U32)(alpha << 24 | blue << 16 | green << 8 | red << 0);
           }
 
-          dst_pixel[i] = color32;
+          dst_memory[i] = color32;
         }
       }
 
