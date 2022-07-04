@@ -39,6 +39,8 @@ Vec8I vec8i(S32 a, S32 b, S32 c, S32 d, S32 e, S32 f, S32 g, S32 h){ return {_mm
 Vec8I operator>(Vec8I a, Vec8I b){
   return {_mm256_cmpgt_epi32(a.simd, b.simd)};
 }
+Vec8I operator>>(Vec8I a, U8 v){ return {_mm256_srai_epi32(a.simd, v)}; }
+Vec8I operator&(Vec8I a, Vec8I b){ return {_mm256_and_si256(a.simd, b.simd)}; }
 Vec8I operator+(Vec8I a, Vec8I b){ return {_mm256_add_epi32(a.simd, b.simd)}; }
 Vec8I operator-(Vec8I a, Vec8I b){ return {_mm256_sub_epi32(a.simd, b.simd)}; }
 Vec8I operator*(Vec8I a, Vec8I b){
@@ -48,3 +50,5 @@ Vec8I operator*(Vec8I a, Vec8I b){
 Vec8I operator+=(Vec8I &a, Vec8I b){ return a + b; }
 
 Vec8I convert_vec8_to_vec8i(Vec8 v){ return Vec8I{_mm256_cvtps_epi32(v.simd)}; }
+Vec8  convert_vec8i_to_vec8(Vec8I v){ return {_mm256_cvtepi32_ps(v.simd)}; }
+

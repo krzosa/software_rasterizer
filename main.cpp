@@ -298,6 +298,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   if(src->pixels == 0) return;
 
   PROFILE_SCOPE(draw_triangle);
+
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
   F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
@@ -334,24 +335,24 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   Vec8 Dy10 = vec8(dy10) * var1_8;
   Vec8 Dy21 = vec8(dy21) * var1_8;
   Vec8 Dy02 = vec8(dy02) * var1_8;
-  Vec8 w0, w1, w2, invw0, invw1, invw2, u, v, interpolated_w;
-  Vec8I ui, vi;
+
+  Vec8 iw_term0 = vec8(1.f / p0.w);
+  Vec8 iw_term1 = vec8(1.f / p1.w);
+  Vec8 iw_term2 = vec8(1.f / p2.w);
 
   U32 *destination = dst->pixels + dst->x*min_y;
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   Vec8 area8 = vec8(area);
+
   for (S64 y = min_y; y < max_y; y++) {
     Vec8 Cx0 = vec8(Cy0);
     Vec8 Cx1 = vec8(Cy1);
     Vec8 Cx2 = vec8(Cy2);
 
     for (S64 x8 = min_x; x8 < max_x; x8+=8) {
-      PROFILE_SCOPE(fill_triangle_outer);
       Cx0 = vec8(Cx0[7]) + Dy10;
       Cx1 = vec8(Cx1[7]) + Dy21;
       Cx2 = vec8(Cx2[7]) + Dy02;
-
-
 
       Vec8 should_fill;
       {
@@ -361,55 +362,71 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
         should_fill = should_fill & (Cx0 >= zero8 & Cx1 >= zero8 & Cx2 >= zero8);
       }
 
-      w0 = Cx1 / area8;
-      w1 = Cx2 / area8;
-      w2 = Cx0 / area8;
+      Vec8 w0 = Cx1 / area8;
+      Vec8 w1 = Cx2 / area8;
+      Vec8 w2 = Cx0 / area8;
 
       // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
       // but why waste an instruction, the smaller the depth value the farther the object
-      interpolated_w = vec8(1.f / p0.w) * w0 + vec8(1.f / p1.w) * w1 + vec8(1.f / p2.w) * w2;
-
+      Vec8 interpolated_w = iw_term0 * w0 + iw_term1 * w1 + iw_term2 * w2;
       F32 *depth_pointer = (depth_buffer + (x8 + y * dst->x));
       Vec8 depth = loadu8(depth_pointer);
       should_fill = should_fill & (depth < interpolated_w);
 
 
-      invw0 = (w0 / vec8(p0.w));
-      invw1 = (w1 / vec8(p1.w));
-      invw2 = (w2 / vec8(p2.w));
+      Vec8 invw0 = (w0 / vec8(p0.w));
+      Vec8 invw1 = (w1 / vec8(p1.w));
+      Vec8 invw2 = (w2 / vec8(p2.w));
 
-      u = vec8(tex0.x) * invw0 + vec8(tex1.x) * invw1 + vec8(tex2.x) * invw2;
-      v = vec8(tex0.y) * invw0 + vec8(tex1.y) * invw1 + vec8(tex2.y) * invw2;
+      Vec8 u = vec8(tex0.x) * invw0 + vec8(tex1.x) * invw1 + vec8(tex2.x) * invw2;
+      Vec8 v = vec8(tex0.y) * invw0 + vec8(tex1.y) * invw1 + vec8(tex2.y) * invw2;
       u /= interpolated_w;
       v /= interpolated_w;
       u = u - floor8(u);
       v = v - floor8(v);
       u = u * vec8(src->x - 1);
       v = v * vec8(src->y - 1);
-      ui = convert_vec8_to_vec8i(u);
-      vi = convert_vec8_to_vec8i(v);
+      Vec8I ui = convert_vec8_to_vec8i(u);
+      Vec8I vi = convert_vec8_to_vec8i(v);
 
       // Origin UV (0,0) is in bottom left
       _mm256_maskstore_epi32((int *)depth_pointer, should_fill.simd, interpolated_w.simd);
       Vec8I indices = ui + ((vec8i(src->y) - vec8i(1) - vi) * vec8i(src->x));
-      U32 *pixel[8] = {
-        src->pixels + indices.e[0],
-        src->pixels + indices.e[1],
-        src->pixels + indices.e[2],
-        src->pixels + indices.e[3],
-        src->pixels + indices.e[4],
-        src->pixels + indices.e[5],
-        src->pixels + indices.e[6],
-        src->pixels + indices.e[7],
-      };
+      S32 size = src->x * src->y;
+      indices.simd = _mm256_min_epi32(_mm256_set1_ps(size), indices.simd);
+      indices.simd = _mm256_max_epi32(_mm256_set1_ps(0), indices.simd);
+
+      U32 pixel[8] = {};
+      if(should_fill[0]) pixel[0] = src->pixels[indices.e[0]];
+      if(should_fill[1]) pixel[1] = src->pixels[indices.e[1]];
+      if(should_fill[2]) pixel[2] = src->pixels[indices.e[2]];
+      if(should_fill[3]) pixel[3] = src->pixels[indices.e[3]];
+      if(should_fill[4]) pixel[4] = src->pixels[indices.e[4]];
+      if(should_fill[5]) pixel[5] = src->pixels[indices.e[5]];
+      if(should_fill[6]) pixel[6] = src->pixels[indices.e[6]];
+      if(should_fill[7]) pixel[7] = src->pixels[indices.e[7]];
+      // Vec8I *pixelv = (Vec8I *)pixel;
+
+      // Vec8I texel_i_a = *pixelv & vec8i(0xff000000);
+      // Vec8I texel_i_b = *pixelv & vec8i(0x00ff0000);
+      // Vec8I texel_i_g = *pixelv & vec8i(0x0000ff00);
+      // Vec8I texel_i_r = *pixelv & vec8i(0x000000ff);
+
+      // Vec8 texel_a = convert_vec8i_to_vec8(texel_i_a >> 24) / vec8(255.f);
+      // Vec8 texel_b = convert_vec8i_to_vec8(texel_i_b >> 16) / vec8(255.f);
+      // Vec8 texel_g = convert_vec8i_to_vec8(texel_i_g >> 8 ) / vec8(255.f);
+      // Vec8 texel_r = convert_vec8i_to_vec8(texel_i_r >> 0 ) / vec8(255.f);
+
+      // texel_r = texel_r * texel_r;
+      // texel_g = texel_g * texel_g;
+      // texel_b = texel_b * texel_b;
 
       U32 *dst_pixel = destination + x8;
       for(S64 i = 0; i < 8; i++){
         if (should_fill[i]){
-          PROFILE_SCOPE(fill_triangle_after_depth_test);
-
-          Vec4 result_color; {
-            U32 c = *pixel[i];
+          Vec4 result_color;// = {texel_r[i], texel_g[i], texel_b[i], texel_a[i]};
+           {
+            U32 c = pixel[i];
             F32 a = ((c & 0xff000000) >> 24) / 255.f;
             F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
             F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
