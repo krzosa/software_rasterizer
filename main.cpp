@@ -293,6 +293,7 @@ U64 filled_pixel_total_time;
 // #include "optimization_log.cpp"
 
 #define I(x,i) (((F32 *)&x)[i])
+#define Is(x,i) (((S32 *)&x)[i])
 typedef __m256  F32x8;
 typedef __m256i S32x8;
 function
@@ -346,6 +347,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   Vec8 Dy10 = vec8(dy10) * var1_8;
   Vec8 Dy21 = vec8(dy21) * var1_8;
   Vec8 Dy02 = vec8(dy02) * var1_8;
+
+  F32x8 var_src_x_minus_one = _mm256_set1_ps(src->x-1);
+  F32x8 var_src_y_minus_one = _mm256_set1_ps(src->y-1);
 
   F32x8 var_tex0x = _mm256_set1_ps(tex0.x);
   F32x8 var_tex1x = _mm256_set1_ps(tex1.x);
@@ -417,44 +421,61 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       F32x8 depth = _mm256_loadu_ps((float *)depth_pointer);
 
       //
-        F32x8 i19 = _mm256_cmp_ps(depth, interpolated_w, _CMP_LT_OQ);
-        should_fill = _mm256_and_ps(should_fill, i19);
+      F32x8 should_fill_term = _mm256_cmp_ps(depth, interpolated_w, _CMP_LT_OQ);
+      should_fill = _mm256_and_ps(should_fill, should_fill_term);
 
       F32x8 invw0 = _mm256_div_ps(w0, var_p0w);
       F32x8 invw1 = _mm256_div_ps(w1, var_p1w);
       F32x8 invw2 = _mm256_div_ps(w2, var_p2w);
 
-      Vec8 u = vec8(tex0.x) * Vec8{invw0} + vec8(tex1.x) * Vec8{invw1} + vec8(tex2.x) * Vec8{invw2};
-      Vec8 v = vec8(tex0.y) * Vec8{invw0} + vec8(tex1.y) * Vec8{invw1} + vec8(tex2.y) * Vec8{invw2};
+      F32x8 u_term0 = _mm256_mul_ps(var_tex0x, invw0);
+      F32x8 u_term1 = _mm256_mul_ps(var_tex1x, invw1);
+      F32x8 u_term2 = _mm256_mul_ps(var_tex2x, invw2);
+      F32x8 u_term3 = _mm256_add_ps(u_term0, u_term1);
+      F32x8 u0      = _mm256_add_ps(u_term2, u_term3);
 
-      u.simd = _mm256_div_ps(u.simd, interpolated_w);
-      v.simd = _mm256_div_ps(v.simd, interpolated_w);
-      u = u - floor8(u);
-      v = v - floor8(v);
-      u = u * vec8(src->x - 1);
-      v = v * vec8(src->y - 1);
-      Vec8I ui = convert_vec8_to_vec8i(u);
-      Vec8I vi = convert_vec8_to_vec8i(v);
+      F32x8 v_term0 = _mm256_mul_ps(var_tex0y, invw0);
+      F32x8 v_term1 = _mm256_mul_ps(var_tex1y, invw1);
+      F32x8 v_term2 = _mm256_mul_ps(var_tex2y, invw2);
+      F32x8 v_term3 = _mm256_add_ps(v_term0, v_term1);
+      F32x8 v0      = _mm256_add_ps(v_term2, v_term3);
+
+      F32x8 u1 = _mm256_div_ps(u0, interpolated_w);
+      F32x8 v1 = _mm256_div_ps(v0, interpolated_w);
+
+      F32x8 u_floored = _mm256_floor_ps(u1);
+      F32x8 v_floored = _mm256_floor_ps(v1);
+      F32x8 u2 = _mm256_sub_ps(u1, u_floored);
+      F32x8 v2 = _mm256_sub_ps(v1, v_floored);
+      F32x8 u3 = _mm256_mul_ps(u2, var_src_x_minus_one);
+      F32x8 v3 = _mm256_mul_ps(v2, var_src_y_minus_one);
+
+      F32x8 ui = _mm256_cvtps_epi32(u3);
+      F32x8 vi = _mm256_cvtps_epi32(v3);
 
       // Origin UV (0,0) is in bottom left
       _mm256_maskstore_epi32((int *)depth_pointer, should_fill, interpolated_w);
-      Vec8I indices = ui + ((vec8i(src->y) - var1i - vi) * vec8i(src->x));
-      S32 size = src->x * src->y;
-      indices.simd = _mm256_min_epi32(_mm256_set1_ps(size), indices.simd);
-      indices.simd = _mm256_max_epi32(var0i.simd, indices.simd);
+
+      S32x8 indices0 = _mm256_set1_epi32(src->y - 1);
+      S32x8 indices1 = _mm256_sub_epi32(indices0, vi);
+      S32x8 indices3 = _mm256_mullo_epi32(_mm256_set1_epi32(src->x), indices1);
+      S32x8 indices  = _mm256_add_epi32(indices3, ui);
+
+
+
 
       //
       // Fetch and calculate texel values
       //
       Vec8I pixel;
-      if(I(should_fill, 0)) pixel.e[0] = src->pixels[indices.e[0]];
-      if(I(should_fill, 1)) pixel.e[1] = src->pixels[indices.e[1]];
-      if(I(should_fill, 2)) pixel.e[2] = src->pixels[indices.e[2]];
-      if(I(should_fill, 3)) pixel.e[3] = src->pixels[indices.e[3]];
-      if(I(should_fill, 4)) pixel.e[4] = src->pixels[indices.e[4]];
-      if(I(should_fill, 5)) pixel.e[5] = src->pixels[indices.e[5]];
-      if(I(should_fill, 6)) pixel.e[6] = src->pixels[indices.e[6]];
-      if(I(should_fill, 7)) pixel.e[7] = src->pixels[indices.e[7]];
+      if(I(should_fill, 0)) pixel.e[0] = src->pixels[Is(indices, 0)];
+      if(I(should_fill, 1)) pixel.e[1] = src->pixels[Is(indices, 1)];
+      if(I(should_fill, 2)) pixel.e[2] = src->pixels[Is(indices, 2)];
+      if(I(should_fill, 3)) pixel.e[3] = src->pixels[Is(indices, 3)];
+      if(I(should_fill, 4)) pixel.e[4] = src->pixels[Is(indices, 4)];
+      if(I(should_fill, 5)) pixel.e[5] = src->pixels[Is(indices, 5)];
+      if(I(should_fill, 6)) pixel.e[6] = src->pixels[Is(indices, 6)];
+      if(I(should_fill, 7)) pixel.e[7] = src->pixels[Is(indices, 7)];
 
       Vec8I texel_i_a = pixel & vec8i(0xff000000);
       Vec8I texel_i_b = pixel & vec8i(0x00ff0000);
