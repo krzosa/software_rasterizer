@@ -288,7 +288,10 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
   return result;
 }
 
+U64 filled_pixel_count;
+U64 filled_pixel_total_time;
 // #include "optimization_log.cpp"
+
 
 function
 void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
@@ -328,7 +331,11 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
   F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
 
+  Vec8 var255 = vec8(255);
   Vec8 zero8 = vec8(0);
+  Vec8 var1 = vec8(1);
+  Vec8I var0i = vec8i(0);
+  Vec8I var1i = vec8i(1);
   Vec8I var07i = vec8i(0,1,2,3,4,5,6,7);
   Vec8 var07 = vec8(0,1,2,3,4,5,6,7);
   Vec8 var1_8 = vec8(1,2,3,4,5,6,7,8);
@@ -344,6 +351,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   Vec8 area8 = vec8(area);
 
+  U64 fill_pixels_begin = __rdtsc();
   for (S64 y = min_y; y < max_y; y++) {
     Vec8 Cx0 = vec8(Cy0);
     Vec8 Cx1 = vec8(Cy1);
@@ -391,10 +399,10 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
       // Origin UV (0,0) is in bottom left
       _mm256_maskstore_epi32((int *)depth_pointer, should_fill.simd, interpolated_w.simd);
-      Vec8I indices = ui + ((vec8i(src->y) - vec8i(1) - vi) * vec8i(src->x));
+      Vec8I indices = ui + ((vec8i(src->y) - var1i - vi) * vec8i(src->x));
       S32 size = src->x * src->y;
       indices.simd = _mm256_min_epi32(_mm256_set1_ps(size), indices.simd);
-      indices.simd = _mm256_max_epi32(_mm256_set1_ps(0), indices.simd);
+      indices.simd = _mm256_max_epi32(var0i.simd, indices.simd);
 
       //
       // Fetch and calculate texel values
@@ -454,10 +462,10 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       dst_i_b = dst_i_b >> 16 ;
       dst_i_g = dst_i_g >> 8;
 
-      Vec8 dst_a = convert_vec8i_to_vec8(dst_i_a) / vec8(255);
-      Vec8 dst_b = convert_vec8i_to_vec8(dst_i_b) / vec8(255);
-      Vec8 dst_g = convert_vec8i_to_vec8(dst_i_g) / vec8(255);
-      Vec8 dst_r = convert_vec8i_to_vec8(dst_i_r) / vec8(255);
+      Vec8 dst_a = convert_vec8i_to_vec8(dst_i_a) / var255;
+      Vec8 dst_b = convert_vec8i_to_vec8(dst_i_b) / var255;
+      Vec8 dst_g = convert_vec8i_to_vec8(dst_i_g) / var255;
+      Vec8 dst_r = convert_vec8i_to_vec8(dst_i_r) / var255;
 
       dst_r *= dst_r;
       dst_g *= dst_g;
@@ -465,46 +473,31 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
       // Premultiplied alpha
       {
-        texel_r = texel_r + ((vec8(1)-texel_a) * dst_r);
-        texel_g = texel_g + ((vec8(1)-texel_a) * dst_g);
-        texel_b = texel_b + ((vec8(1)-texel_a) * dst_b);
-        texel_a = texel_a + dst_a - texel_a*dst_a;
+        dst_r = texel_r + ((var1-texel_a) * dst_r);
+        dst_g = texel_g + ((var1-texel_a) * dst_g);
+        dst_b = texel_b + ((var1-texel_a) * dst_b);
+        dst_a = texel_a + dst_a - texel_a*dst_a;
       }
 
       // Almost linear to srgb
       {
-        texel_r.simd = {_mm256_sqrt_ps(texel_r.simd)};
-        texel_g.simd = {_mm256_sqrt_ps(texel_g.simd)};
-        texel_b.simd = {_mm256_sqrt_ps(texel_b.simd)};
+        dst_r.simd = {_mm256_sqrt_ps(dst_r.simd)};
+        dst_g.simd = {_mm256_sqrt_ps(dst_g.simd)};
+        dst_b.simd = {_mm256_sqrt_ps(dst_b.simd)};
       }
 
+      Vec8I result;
       for(S64 i = 0; i < 8; i++){
         if (should_fill[i]){
-          Vec4 result_color = {texel_r[i], texel_g[i], texel_b[i], texel_a[i]};
-          Vec4 dst_color = {dst_r[i], dst_g[i], dst_b[i], dst_a[i]};
-
-#if 0
-          Vec3 light_color = vec3(0.8,0.8,1);
-          constexpr F32 ambient_strength = 0.1f; {
-            Vec3 ambient = ambient_strength * light_color;
-            Vec3 diffuse = clamp_bot(0.f, -dot(norm, light_direction)) * light_color;
-            result_color.rgb *= (ambient+diffuse);
-          }
-#endif
-
-
-          U32 color32;
-          {
-            U8 red     = (U8)(result_color.r * 255);
-            U8 green   = (U8)(result_color.g * 255);
-            U8 blue    = (U8)(result_color.b * 255);
-            U8 alpha   = (U8)(result_color.a * 255);
-            color32 = (U32)(alpha << 24 | blue << 16 | green << 8 | red << 0);
-          }
-
-          dst_memory[i] = color32;
+            U8 red     = (U8)(dst_r[i] * 255);
+            U8 green   = (U8)(dst_g[i] * 255);
+            U8 blue    = (U8)(dst_b[i] * 255);
+            U8 alpha   = (U8)(dst_a[i] * 255);
+            result.e[i] = (U32)(alpha << 24 | blue << 16 | green << 8 | red << 0);
         }
       }
+
+      _mm256_maskstore_epi32((int *)dst_memory, should_fill.simd, result.simd);
 
     }
     Cy0 -= dx10;
@@ -512,6 +505,10 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
     Cy2 -= dx02;
     destination += dst->x;
   }
+  U64 end_time = __rdtsc();
+
+  filled_pixel_total_time += end_time - fill_pixels_begin;
+  filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
 }
 
 function
@@ -808,6 +805,7 @@ main(int argc, char **argv) {
       r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y);
 
 
+    // log_info("\nAvg_Time: %llu Time:%llu Count:%llu", filled_pixel_total_time/filled_pixel_count, filled_pixel_total_time, filled_pixel_count);
     for(int i = 0; i < ProfileScopeName_Count; i++){
       auto *scope = &profile_scopes[i];
       if(scope->i == 0) continue;

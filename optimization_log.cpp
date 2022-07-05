@@ -132,6 +132,7 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
 
   U32 *destination = dst->pixels + dst->x*min_y;
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
+  U64 fill_pixels_begin = __rdtsc();
   for (S64 y = min_y; y < max_y; y++) {
     F32 Cx0 = Cy0;
     F32 Cx1 = Cy1;
@@ -220,6 +221,10 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
     destination += dst->x;
   }
 
+U64 end_time = __rdtsc();
+
+  filled_pixel_total_time += end_time - fill_pixels_begin;
+  filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
      // if(os.frame > 10) PROFILE_END(draw_triangle);
 }
 
@@ -800,4 +805,223 @@ void draw_triangle_nearest_e(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
     Cy2 -= dx02;
     destination += dst->x;
   }
+}
+
+
+function
+void draw_triangle_nearest_f(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
+                           Vec4 p0,   Vec4 p1,   Vec4 p2,
+                           Vec2 tex0, Vec2 tex1, Vec2 tex2,
+                           Vec3 norm0, Vec3 norm1, Vec3 norm2) {
+  if(src->pixels == 0) return;
+
+  PROFILE_SCOPE(draw_triangle);
+
+  F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
+  F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
+  F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
+  F32 max_y1 = (F32)(max(p0.y, max(p1.y, p2.y)));
+
+  S64 min_x = (S64)max(0.f, floor(min_x1));
+  S64 min_y = (S64)max(0.f, floor(min_y1));
+  S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
+  S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
+
+  if (min_y >= max_y) return;
+  if (min_x >= max_x) return;
+
+  F32 dy10 = (p1.y - p0.y);
+  F32 dy21 = (p2.y - p1.y);
+  F32 dy02 = (p0.y - p2.y);
+
+  F32 dx10 = (p1.x - p0.x);
+  F32 dx21 = (p2.x - p1.x);
+  F32 dx02 = (p0.x - p2.x);
+
+  F32 C0 = dy10 * (p0.x) - dx10 * (p0.y);
+  F32 C1 = dy21 * (p1.x) - dx21 * (p1.y);
+  F32 C2 = dy02 * (p2.x) - dx02 * (p2.y);
+
+  F32 Cy0 = dy10 * min_x - dx10 * min_y - C0;
+  F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
+  F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
+
+  Vec8 var255 = vec8(255);
+  Vec8 zero8 = vec8(0);
+  Vec8 var1 = vec8(1);
+  Vec8I var0i = vec8i(0);
+  Vec8I var1i = vec8i(1);
+  Vec8I var07i = vec8i(0,1,2,3,4,5,6,7);
+  Vec8 var07 = vec8(0,1,2,3,4,5,6,7);
+  Vec8 var1_8 = vec8(1,2,3,4,5,6,7,8);
+  Vec8 Dy10 = vec8(dy10) * var1_8;
+  Vec8 Dy21 = vec8(dy21) * var1_8;
+  Vec8 Dy02 = vec8(dy02) * var1_8;
+
+  Vec8 iw_term0 = vec8(1.f / p0.w);
+  Vec8 iw_term1 = vec8(1.f / p1.w);
+  Vec8 iw_term2 = vec8(1.f / p2.w);
+
+  U32 *destination = dst->pixels + dst->x*min_y;
+  F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
+  Vec8 area8 = vec8(area);
+
+  U64 fill_pixels_begin = __rdtsc();
+  for (S64 y = min_y; y < max_y; y++) {
+    Vec8 Cx0 = vec8(Cy0);
+    Vec8 Cx1 = vec8(Cy1);
+    Vec8 Cx2 = vec8(Cy2);
+
+    for (S64 x8 = min_x; x8 < max_x; x8+=8) {
+      Cx0 = vec8(Cx0[7]) + Dy10;
+      Cx1 = vec8(Cx1[7]) + Dy21;
+      Cx2 = vec8(Cx2[7]) + Dy02;
+
+      Vec8 should_fill;
+      {
+        Vec8 a = (vec8(x8) + var07);
+        Vec8 b = vec8(max_x);
+        should_fill = a < b;
+        should_fill = should_fill & (Cx0 >= zero8 & Cx1 >= zero8 & Cx2 >= zero8);
+      }
+
+      Vec8 w0 = Cx1 / area8;
+      Vec8 w1 = Cx2 / area8;
+      Vec8 w2 = Cx0 / area8;
+
+      // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
+      // but why waste an instruction, the smaller the depth value the farther the object
+      Vec8 interpolated_w = iw_term0 * w0 + iw_term1 * w1 + iw_term2 * w2;
+      F32 *depth_pointer = (depth_buffer + (x8 + y * dst->x));
+      Vec8 depth = loadu8(depth_pointer);
+      should_fill = should_fill & (depth < interpolated_w);
+
+
+      Vec8 invw0 = (w0 / vec8(p0.w));
+      Vec8 invw1 = (w1 / vec8(p1.w));
+      Vec8 invw2 = (w2 / vec8(p2.w));
+
+      Vec8 u = vec8(tex0.x) * invw0 + vec8(tex1.x) * invw1 + vec8(tex2.x) * invw2;
+      Vec8 v = vec8(tex0.y) * invw0 + vec8(tex1.y) * invw1 + vec8(tex2.y) * invw2;
+      u /= interpolated_w;
+      v /= interpolated_w;
+      u = u - floor8(u);
+      v = v - floor8(v);
+      u = u * vec8(src->x - 1);
+      v = v * vec8(src->y - 1);
+      Vec8I ui = convert_vec8_to_vec8i(u);
+      Vec8I vi = convert_vec8_to_vec8i(v);
+
+      // Origin UV (0,0) is in bottom left
+      _mm256_maskstore_epi32((int *)depth_pointer, should_fill.simd, interpolated_w.simd);
+      Vec8I indices = ui + ((vec8i(src->y) - var1i - vi) * vec8i(src->x));
+      S32 size = src->x * src->y;
+      indices.simd = _mm256_min_epi32(_mm256_set1_ps(size), indices.simd);
+      indices.simd = _mm256_max_epi32(var0i.simd, indices.simd);
+
+      //
+      // Fetch and calculate texel values
+      //
+      Vec8I pixel;
+      if(should_fill[0]) pixel.e[0] = src->pixels[indices.e[0]];
+      if(should_fill[1]) pixel.e[1] = src->pixels[indices.e[1]];
+      if(should_fill[2]) pixel.e[2] = src->pixels[indices.e[2]];
+      if(should_fill[3]) pixel.e[3] = src->pixels[indices.e[3]];
+      if(should_fill[4]) pixel.e[4] = src->pixels[indices.e[4]];
+      if(should_fill[5]) pixel.e[5] = src->pixels[indices.e[5]];
+      if(should_fill[6]) pixel.e[6] = src->pixels[indices.e[6]];
+      if(should_fill[7]) pixel.e[7] = src->pixels[indices.e[7]];
+
+      Vec8I texel_i_a = pixel & vec8i(0xff000000);
+      Vec8I texel_i_b = pixel & vec8i(0x00ff0000);
+      Vec8I texel_i_g = pixel & vec8i(0x0000ff00);
+      Vec8I texel_i_r = pixel & vec8i(0x000000ff);
+
+      // Alpha is done this way because signed integer shift is weird
+      // When sign bit is set it sets all bits that we shift the sign through
+      // So first we shift
+      texel_i_a = (texel_i_a >> 24);
+      texel_i_a = texel_i_a & vec8i(0x000000ff);
+      texel_i_b = (texel_i_b >> 16);
+      texel_i_g = (texel_i_g >> 8 );
+      texel_i_r = (texel_i_r >> 0 );
+
+      Vec8 texel_a = convert_vec8i_to_vec8(texel_i_a);
+      Vec8 texel_b = convert_vec8i_to_vec8(texel_i_b);
+      Vec8 texel_g = convert_vec8i_to_vec8(texel_i_g);
+      Vec8 texel_r = convert_vec8i_to_vec8(texel_i_r);
+
+      Vec8 v255 = vec8(255.f);
+      texel_a = texel_a / v255;
+      texel_b = texel_b / v255;
+      texel_g = texel_g / v255;
+      texel_r = texel_r / v255;
+
+      texel_r = texel_r * texel_r;
+      texel_g = texel_g * texel_g;
+      texel_b = texel_b * texel_b;
+
+      //
+      // Fetch and calculate dst pixels
+      //
+      U32 *dst_memory = destination + x8;
+      Vec8I dst_pixel = {_mm256_maskload_epi32((const int *)dst_memory, should_fill.simd)};
+
+      Vec8I dst_i_a = dst_pixel & vec8i(0xff000000);
+      Vec8I dst_i_b = dst_pixel & vec8i(0x00ff0000);
+      Vec8I dst_i_g = dst_pixel & vec8i(0x0000ff00);
+      Vec8I dst_i_r = dst_pixel & vec8i(0x000000ff);
+
+      dst_i_a = dst_i_a >> 24;
+      dst_i_a = dst_i_a &  vec8i(0x000000ff);
+      dst_i_b = dst_i_b >> 16 ;
+      dst_i_g = dst_i_g >> 8;
+
+      Vec8 dst_a = convert_vec8i_to_vec8(dst_i_a) / var255;
+      Vec8 dst_b = convert_vec8i_to_vec8(dst_i_b) / var255;
+      Vec8 dst_g = convert_vec8i_to_vec8(dst_i_g) / var255;
+      Vec8 dst_r = convert_vec8i_to_vec8(dst_i_r) / var255;
+
+      dst_r *= dst_r;
+      dst_g *= dst_g;
+      dst_b *= dst_b;
+
+      // Premultiplied alpha
+      {
+        dst_r = texel_r + ((var1-texel_a) * dst_r);
+        dst_g = texel_g + ((var1-texel_a) * dst_g);
+        dst_b = texel_b + ((var1-texel_a) * dst_b);
+        dst_a = texel_a + dst_a - texel_a*dst_a;
+      }
+
+      // Almost linear to srgb
+      {
+        dst_r.simd = {_mm256_sqrt_ps(dst_r.simd)};
+        dst_g.simd = {_mm256_sqrt_ps(dst_g.simd)};
+        dst_b.simd = {_mm256_sqrt_ps(dst_b.simd)};
+      }
+
+      Vec8I result;
+      for(S64 i = 0; i < 8; i++){
+        if (should_fill[i]){
+            U8 red     = (U8)(dst_r[i] * 255);
+            U8 green   = (U8)(dst_g[i] * 255);
+            U8 blue    = (U8)(dst_b[i] * 255);
+            U8 alpha   = (U8)(dst_a[i] * 255);
+            result.e[i] = (U32)(alpha << 24 | blue << 16 | green << 8 | red << 0);
+        }
+      }
+
+      _mm256_maskstore_epi32((int *)dst_memory, should_fill.simd, result.simd);
+
+    }
+    Cy0 -= dx10;
+    Cy1 -= dx21;
+    Cy2 -= dx02;
+    destination += dst->x;
+  }
+  U64 end_time = __rdtsc();
+
+  filled_pixel_total_time += end_time - fill_pixels_begin;
+  filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
 }

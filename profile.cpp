@@ -25,7 +25,6 @@ const char *profile_scope_names[] = {
 
 struct ProfileState {
   U64 samples[5096*32];
-  S32 pixel_counts[5096*32];
   S32 i;
 };
 
