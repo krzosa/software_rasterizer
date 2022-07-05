@@ -338,11 +338,8 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32x8 var0 = _mm256_set1_ps(0);
   F32x8 var_max_x = _mm256_set1_ps(max_x);
   F32x8 var07 = _mm256_set_ps(7,6,5,4,3,2,1,0);
-  // F32x8 var1 = _mm256_set1_ps(1);
 
   Vec8 var1 = vec8(1);
-  Vec8I var0i = vec8i(0);
-  Vec8I var1i = vec8i(1);
   Vec8 var1_8 = vec8(1,2,3,4,5,6,7,8);
   Vec8 Dy10 = vec8(dy10) * var1_8;
   Vec8 Dy21 = vec8(dy21) * var1_8;
@@ -350,6 +347,13 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
   F32x8 var_src_x_minus_one = _mm256_set1_ps(src->x-1);
   F32x8 var_src_y_minus_one = _mm256_set1_ps(src->y-1);
+  S32x8 var_src_y_minus_one_int = _mm256_set1_epi32(src->y-1);
+  S32x8 var_src_x_int = _mm256_set1_epi32(src->x);
+
+  S32x8 var_0xff000000 = _mm256_set1_epi32(0xff000000);
+  S32x8 var_0x00ff0000 = _mm256_set1_epi32(0x00ff0000);
+  S32x8 var_0x0000ff00 = _mm256_set1_epi32(0x0000ff00);
+  S32x8 var_0x000000ff = _mm256_set1_epi32(0x000000ff);
 
   F32x8 var_tex0x = _mm256_set1_ps(tex0.x);
   F32x8 var_tex1x = _mm256_set1_ps(tex1.x);
@@ -456,31 +460,27 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       // Origin UV (0,0) is in bottom left
       _mm256_maskstore_epi32((int *)depth_pointer, should_fill, interpolated_w);
 
-      S32x8 indices0 = _mm256_set1_epi32(src->y - 1);
-      S32x8 indices1 = _mm256_sub_epi32(indices0, vi);
-      S32x8 indices3 = _mm256_mullo_epi32(_mm256_set1_epi32(src->x), indices1);
+      S32x8 indices1 = _mm256_sub_epi32(var_src_y_minus_one_int, vi);
+      S32x8 indices3 = _mm256_mullo_epi32(var_src_x_int, indices1);
       S32x8 indices  = _mm256_add_epi32(indices3, ui);
-
-
-
 
       //
       // Fetch and calculate texel values
       //
-      Vec8I pixel;
-      if(I(should_fill, 0)) pixel.e[0] = src->pixels[Is(indices, 0)];
-      if(I(should_fill, 1)) pixel.e[1] = src->pixels[Is(indices, 1)];
-      if(I(should_fill, 2)) pixel.e[2] = src->pixels[Is(indices, 2)];
-      if(I(should_fill, 3)) pixel.e[3] = src->pixels[Is(indices, 3)];
-      if(I(should_fill, 4)) pixel.e[4] = src->pixels[Is(indices, 4)];
-      if(I(should_fill, 5)) pixel.e[5] = src->pixels[Is(indices, 5)];
-      if(I(should_fill, 6)) pixel.e[6] = src->pixels[Is(indices, 6)];
-      if(I(should_fill, 7)) pixel.e[7] = src->pixels[Is(indices, 7)];
+      S32x8 pixel;
+      if(I(should_fill, 0)) Is(pixel, 0) = src->pixels[Is(indices, 0)];
+      if(I(should_fill, 1)) Is(pixel, 1) = src->pixels[Is(indices, 1)];
+      if(I(should_fill, 2)) Is(pixel, 2) = src->pixels[Is(indices, 2)];
+      if(I(should_fill, 3)) Is(pixel, 3) = src->pixels[Is(indices, 3)];
+      if(I(should_fill, 4)) Is(pixel, 4) = src->pixels[Is(indices, 4)];
+      if(I(should_fill, 5)) Is(pixel, 5) = src->pixels[Is(indices, 5)];
+      if(I(should_fill, 6)) Is(pixel, 6) = src->pixels[Is(indices, 6)];
+      if(I(should_fill, 7)) Is(pixel, 7) = src->pixels[Is(indices, 7)];
 
-      Vec8I texel_i_a = pixel & vec8i(0xff000000);
-      Vec8I texel_i_b = pixel & vec8i(0x00ff0000);
-      Vec8I texel_i_g = pixel & vec8i(0x0000ff00);
-      Vec8I texel_i_r = pixel & vec8i(0x000000ff);
+      Vec8I texel_i_a = {_mm256_and_si256(pixel, var_0xff000000)};
+      Vec8I texel_i_b = {_mm256_and_si256(pixel, var_0x00ff0000)};
+      Vec8I texel_i_g = {_mm256_and_si256(pixel, var_0x0000ff00)};
+      Vec8I texel_i_r = {_mm256_and_si256(pixel, var_0x000000ff)};
 
       // Alpha is done this way because signed integer shift is weird
       // When sign bit is set it sets all bits that we shift the sign through
