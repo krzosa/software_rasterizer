@@ -574,8 +574,8 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       S32x8 dst_int_r_shifted = dst_r_int;
 
       S32x8 packed_abgr0 = _mm256_or_si256(dst_int_a_shifted, dst_int_b_shifted);
-      S32x8 packed_abgr1 = _mm256_or_si256(packed_abgr0, dst_int_g_shifted);
-      S32x8 packed_abgr2 = _mm256_or_si256(packed_abgr1, dst_int_r_shifted);
+      S32x8 packed_abgr1 = _mm256_or_si256(dst_int_r_shifted, dst_int_g_shifted);
+      S32x8 packed_abgr2 = _mm256_or_si256(packed_abgr1, packed_abgr0);
 
       _mm256_maskstore_epi32((int *)dst_memory, should_fill, packed_abgr2);
     }
