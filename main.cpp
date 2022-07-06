@@ -371,6 +371,8 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32x8 one_over_p1w = _mm256_set1_ps(1.f / p1.w);
   F32x8 one_over_p2w = _mm256_set1_ps(1.f / p2.w);
 
+
+
   U32 *destination = dst->pixels + dst->x*min_y;
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   F32x8 area8 = _mm256_set1_ps(area);
@@ -423,7 +425,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       F32 *depth_pointer = (depth_buffer + (x8 + y * dst->x));
       F32x8 depth = _mm256_loadu_ps((float *)depth_pointer);
 
-      //
       F32x8 should_fill_term = _mm256_cmp_ps(depth, interpolated_w, _CMP_LT_OQ);
       should_fill = _mm256_and_ps(should_fill, should_fill_term);
 
@@ -550,18 +551,27 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
         dst_b = _mm256_sqrt_ps(dst_b);
       }
 
-      S32x8 result;
-      for(S64 i = 0; i < 8; i++){
-        if (I(should_fill, i)){
-            U8 red     = (U8)(dst_r[i] * 255);
-            U8 green   = (U8)(dst_g[i] * 255);
-            U8 blue    = (U8)(dst_b[i] * 255);
-            U8 alpha   = (U8)(dst_a[i] * 255);
-            Is(result, i) = (U32)(alpha << 24 | blue << 16 | green << 8 | red << 0);
-        }
-      }
+      // Convert to integer format
+      dst_r = _mm256_mul_ps(dst_r, var255);
+      dst_g = _mm256_mul_ps(dst_g, var255);
+      dst_b = _mm256_mul_ps(dst_b, var255);
+      dst_a = _mm256_mul_ps(dst_a, var255);
 
-      _mm256_maskstore_epi32((int *)dst_memory, should_fill, result);
+      S32x8 dst_r_int = _mm256_cvtps_epi32(dst_r);
+      S32x8 dst_g_int = _mm256_cvtps_epi32(dst_g);
+      S32x8 dst_b_int = _mm256_cvtps_epi32(dst_b);
+      S32x8 dst_a_int = _mm256_cvtps_epi32(dst_a);
+
+      S32x8 dst_int_a_shifted = _mm256_slli_epi32(dst_a_int, 24);
+      S32x8 dst_int_b_shifted = _mm256_slli_epi32(dst_b_int, 16);
+      S32x8 dst_int_g_shifted = _mm256_slli_epi32(dst_g_int, 8);
+      S32x8 dst_int_r_shifted = dst_r_int;
+
+      S32x8 packed_abgr0 = _mm256_or_si256(dst_int_a_shifted, dst_int_b_shifted);
+      S32x8 packed_abgr1 = _mm256_or_si256(packed_abgr0, dst_int_g_shifted);
+      S32x8 packed_abgr2 = _mm256_or_si256(packed_abgr1, dst_int_r_shifted);
+
+      _mm256_maskstore_epi32((int *)dst_memory, should_fill, packed_abgr2);
 
     }
     Cy0 -= dx10;
