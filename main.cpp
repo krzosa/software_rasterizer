@@ -89,7 +89,7 @@
 #undef assert
 #endif
 
-
+// #include "obj_dump.cpp"
 #include "multimedia.cpp"
 #include "profile.cpp"
 #include "obj.cpp"
@@ -288,14 +288,14 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
   return result;
 }
 
+#define I(x,i) (((F32 *)&x)[i])
+#define Is(x,i) (((S32 *)&x)[i])
+#define F32x8 __m256
+#define S32x8 __m256i
+
 U64 filled_pixel_count;
 U64 filled_pixel_total_time;
 // #include "optimization_log.cpp"
-
-#define I(x,i) (((F32 *)&x)[i])
-#define Is(x,i) (((S32 *)&x)[i])
-typedef __m256  F32x8;
-typedef __m256i S32x8;
 
 function
 void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
@@ -371,8 +371,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32x8 one_over_p1w = _mm256_set1_ps(1.f / p1.w);
   F32x8 one_over_p2w = _mm256_set1_ps(1.f / p2.w);
 
-
-
   U32 *destination = dst->pixels + dst->x*min_y;
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   F32x8 area8 = _mm256_set1_ps(area);
@@ -427,6 +425,14 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
       F32x8 should_fill_term = _mm256_cmp_ps(depth, interpolated_w, _CMP_LT_OQ);
       should_fill = _mm256_and_ps(should_fill, should_fill_term);
+
+#if 0
+      // If all pixels are not going to get drawn then opt out
+      // Seems to decrease perf
+      F32x8 compare_with_zero = _mm256_cmpeq_epi32(should_fill, var0);
+      int mask = _mm256_movemask_epi8(compare_with_zero);
+      if(mask == 1) continue;
+#endif
 
       F32x8 invw0 = _mm256_div_ps(w0, var_p0w);
       F32x8 invw1 = _mm256_div_ps(w1, var_p1w);
@@ -572,7 +578,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       S32x8 packed_abgr2 = _mm256_or_si256(packed_abgr1, dst_int_r_shifted);
 
       _mm256_maskstore_epi32((int *)dst_memory, should_fill, packed_abgr2);
-
     }
     Cy0 -= dx10;
     Cy1 -= dx21;
