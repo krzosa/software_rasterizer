@@ -1313,3 +1313,295 @@ void draw_triangle_nearest_g(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
   filled_pixel_total_time += end_time - fill_pixels_begin;
   filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
 }
+
+function
+void draw_triangle_nearest_iter(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
+                           Vec4 p0,   Vec4 p1,   Vec4 p2,
+                           Vec2 tex0, Vec2 tex1, Vec2 tex2,
+                           Vec3 norm0, Vec3 norm1, Vec3 norm2) {
+  if(src->pixels == 0) return;
+
+  PROFILE_SCOPE(draw_triangle);
+
+  F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
+  F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
+  F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
+  F32 max_y1 = (F32)(max(p0.y, max(p1.y, p2.y)));
+
+  S64 min_x = (S64)max(0.f, floor(min_x1));
+  S64 min_y = (S64)max(0.f, floor(min_y1));
+  S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
+  S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
+
+  if (min_y >= max_y) return;
+  if (min_x >= max_x) return;
+
+  F32 dy10 = (p1.y - p0.y);
+  F32 dy21 = (p2.y - p1.y);
+  F32 dy02 = (p0.y - p2.y);
+
+  F32 dx10 = (p1.x - p0.x);
+  F32 dx21 = (p2.x - p1.x);
+  F32 dx02 = (p0.x - p2.x);
+
+  F32 C0 = dy10 * (p0.x) - dx10 * (p0.y);
+  F32 C1 = dy21 * (p1.x) - dx21 * (p1.y);
+  F32 C2 = dy02 * (p2.x) - dx02 * (p2.y);
+
+  F32 Cy0 = dy10 * min_x - dx10 * min_y - C0;
+  F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
+  F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
+
+  F32x8 var255 = _mm256_set1_ps(255);
+  F32x8 var0 = _mm256_set1_ps(0);
+  F32x8 var1 = _mm256_set1_ps(1);
+  F32x8 inv255 = _mm256_div_ps(var1, var255);
+  F32x8 var_max_x = _mm256_set1_ps(max_x);
+  F32x8 var07 = _mm256_set_ps(7,6,5,4,3,2,1,0);
+
+  F32x8 var_1_8 = _mm256_set_ps(8,7,6,5,4,3,2,1);
+  F32x8 Dy10 = _mm256_mul_ps(_mm256_set1_ps(dy10), var_1_8);
+  F32x8 Dy21 = _mm256_mul_ps(_mm256_set1_ps(dy21), var_1_8);
+  F32x8 Dy02 = _mm256_mul_ps(_mm256_set1_ps(dy02), var_1_8);
+
+  F32x8 var_src_x_minus_one = _mm256_set1_ps(src->x-1);
+  F32x8 var_src_y_minus_one = _mm256_set1_ps(src->y-1);
+  S32x8 var_src_y_minus_one_int = _mm256_set1_epi32(src->y-1);
+  S32x8 var_src_x_int = _mm256_set1_epi32(src->x);
+
+  S32x8 var_0xff000000 = _mm256_set1_epi32(0xff000000);
+  S32x8 var_0x00ff0000 = _mm256_set1_epi32(0x00ff0000);
+  S32x8 var_0x0000ff00 = _mm256_set1_epi32(0x0000ff00);
+  S32x8 var_0x000000ff = _mm256_set1_epi32(0x000000ff);
+
+  F32x8 var_tex0x = _mm256_set1_ps(tex0.x);
+  F32x8 var_tex1x = _mm256_set1_ps(tex1.x);
+  F32x8 var_tex2x = _mm256_set1_ps(tex2.x);
+  F32x8 var_tex0y = _mm256_set1_ps(tex0.y);
+  F32x8 var_tex1y = _mm256_set1_ps(tex1.y);
+  F32x8 var_tex2y = _mm256_set1_ps(tex2.y);
+
+  F32x8 var_p0w = _mm256_set1_ps(p0.w);
+  F32x8 var_p1w = _mm256_set1_ps(p1.w);
+  F32x8 var_p2w = _mm256_set1_ps(p2.w);
+  F32x8 one_over_p0w = _mm256_set1_ps(1.f / p0.w);
+  F32x8 one_over_p1w = _mm256_set1_ps(1.f / p1.w);
+  F32x8 one_over_p2w = _mm256_set1_ps(1.f / p2.w);
+
+  U32 *destination = dst->pixels + dst->x*min_y;
+  F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
+  F32x8 area8 = _mm256_set1_ps(area);
+  U64 fill_pixels_begin = __rdtsc();
+  for (S64 y = min_y; y < max_y; y++) {
+    F32x8 Cx0 = _mm256_set1_ps(Cy0);
+    F32x8 Cx1 = _mm256_set1_ps(Cy1);
+    F32x8 Cx2 = _mm256_set1_ps(Cy2);
+
+    for (S64 x8 = min_x; x8 < max_x; x8+=8) {
+      {
+        F32x8 i0 = _mm256_set1_ps(I(Cx0, 7));
+        Cx0 = _mm256_add_ps(i0, Dy10);
+
+        F32x8 i2 = _mm256_set1_ps(I(Cx1, 7));
+        Cx1 = _mm256_add_ps(i2, Dy21);
+
+        F32x8 i4 = _mm256_set1_ps(I(Cx2, 7));
+        Cx2 = _mm256_add_ps(i4, Dy02);
+      }
+
+
+      F32x8 should_fill;
+        F32x8 i11 = _mm256_set1_ps(x8);
+        F32x8 i12 = _mm256_add_ps(i11, var07);
+        F32x8 i13 = _mm256_cmp_ps(i12, var_max_x, _CMP_LT_OQ);
+
+        F32x8 i6  = _mm256_cmp_ps(Cx0, var0, _CMP_GE_OQ);
+        F32x8 i7  = _mm256_cmp_ps(Cx1, var0, _CMP_GE_OQ);
+        F32x8 i8  = _mm256_cmp_ps(Cx2, var0, _CMP_GE_OQ);
+        F32x8 i9  = _mm256_and_ps(i6, i7);
+        F32x8 i10 = _mm256_and_ps(i9, i8);
+        should_fill = _mm256_and_ps(i13, i10);
+
+      F32x8 w0 = _mm256_div_ps(Cx1, area8);
+      F32x8 w1 = _mm256_div_ps(Cx2, area8);
+      F32x8 w2 = _mm256_div_ps(Cx0, area8);
+
+      // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
+      // but why waste an instruction, the smaller the depth value the farther the object
+      F32x8 interpolated_w;
+        F32x8 i14 = _mm256_mul_ps(one_over_p0w, w0); //
+        F32x8 i15 = _mm256_mul_ps(one_over_p1w, w1);
+        F32x8 i16 = _mm256_mul_ps(one_over_p2w, w2);
+        F32x8 i17 = _mm256_add_ps(i14, i15);
+        F32x8 i18 = _mm256_add_ps(i16, i17);
+        interpolated_w = {i18};
+
+      F32 *depth_pointer = (depth_buffer + (x8 + y * dst->x));
+      F32x8 depth = _mm256_loadu_ps((float *)depth_pointer);
+
+      F32x8 should_fill_term = _mm256_cmp_ps(depth, interpolated_w, _CMP_LT_OQ);
+      should_fill = _mm256_and_ps(should_fill, should_fill_term);
+
+#if 0
+      // If all pixels are not going to get drawn then opt out
+      // Seems to decrease perf
+      F32x8 compare_with_zero = _mm256_cmpeq_epi32(should_fill, var0);
+      int mask = _mm256_movemask_epi8(compare_with_zero);
+      if(mask == 1) continue;
+#endif
+
+      F32x8 invw0 = _mm256_div_ps(w0, var_p0w);
+      F32x8 invw1 = _mm256_div_ps(w1, var_p1w);
+      F32x8 invw2 = _mm256_div_ps(w2, var_p2w);
+
+      F32x8 u_term0 = _mm256_mul_ps(var_tex0x, invw0);
+      F32x8 u_term1 = _mm256_mul_ps(var_tex1x, invw1);
+      F32x8 u_term2 = _mm256_mul_ps(var_tex2x, invw2);
+      F32x8 u_term3 = _mm256_add_ps(u_term0, u_term1);
+      F32x8 u0      = _mm256_add_ps(u_term2, u_term3);
+
+      F32x8 v_term0 = _mm256_mul_ps(var_tex0y, invw0);
+      F32x8 v_term1 = _mm256_mul_ps(var_tex1y, invw1);
+      F32x8 v_term2 = _mm256_mul_ps(var_tex2y, invw2);
+      F32x8 v_term3 = _mm256_add_ps(v_term0, v_term1);
+      F32x8 v0      = _mm256_add_ps(v_term2, v_term3);
+
+      F32x8 u1 = _mm256_div_ps(u0, interpolated_w);
+      F32x8 v1 = _mm256_div_ps(v0, interpolated_w);
+
+      F32x8 u_floored = _mm256_floor_ps(u1);
+      F32x8 v_floored = _mm256_floor_ps(v1);
+      F32x8 u2 = _mm256_sub_ps(u1, u_floored);
+      F32x8 v2 = _mm256_sub_ps(v1, v_floored);
+      F32x8 u3 = _mm256_mul_ps(u2, var_src_x_minus_one);
+      F32x8 v3 = _mm256_mul_ps(v2, var_src_y_minus_one);
+
+      F32x8 ui = _mm256_cvtps_epi32(u3);
+      F32x8 vi = _mm256_cvtps_epi32(v3);
+
+      // Origin UV (0,0) is in bottom left
+      _mm256_maskstore_epi32((int *)depth_pointer, should_fill, interpolated_w);
+
+      S32x8 indices1 = _mm256_sub_epi32(var_src_y_minus_one_int, vi);
+      S32x8 indices3 = _mm256_mullo_epi32(var_src_x_int, indices1);
+      S32x8 indices  = _mm256_add_epi32(indices3, ui);
+
+      //
+      // Fetch and calculate texel values
+      //
+      S32x8 pixel;
+      if(I(should_fill, 0)) Is(pixel, 0) = src->pixels[Is(indices, 0)];
+      if(I(should_fill, 1)) Is(pixel, 1) = src->pixels[Is(indices, 1)];
+      if(I(should_fill, 2)) Is(pixel, 2) = src->pixels[Is(indices, 2)];
+      if(I(should_fill, 3)) Is(pixel, 3) = src->pixels[Is(indices, 3)];
+      if(I(should_fill, 4)) Is(pixel, 4) = src->pixels[Is(indices, 4)];
+      if(I(should_fill, 5)) Is(pixel, 5) = src->pixels[Is(indices, 5)];
+      if(I(should_fill, 6)) Is(pixel, 6) = src->pixels[Is(indices, 6)];
+      if(I(should_fill, 7)) Is(pixel, 7) = src->pixels[Is(indices, 7)];
+
+      S32x8 texel_i_a = _mm256_and_si256(pixel, var_0xff000000);
+      S32x8 texel_i_b = _mm256_and_si256(pixel, var_0x00ff0000);
+      S32x8 texel_i_g = _mm256_and_si256(pixel, var_0x0000ff00);
+      S32x8 texel_i_r = _mm256_and_si256(pixel, var_0x000000ff);
+
+      // Alpha is done this way because signed integer shift is weird
+      // When sign bit is set it sets all bits that we shift the sign through
+      // So first we shift
+      texel_i_a = _mm256_srai_epi32(texel_i_a, 24);
+      texel_i_a = _mm256_and_si256(texel_i_a, var_0x000000ff);
+      texel_i_b = _mm256_srai_epi32(texel_i_b, 16);
+      texel_i_g = _mm256_srai_epi32(texel_i_g, 8 );
+      texel_i_r = _mm256_srai_epi32(texel_i_r, 0 );
+
+      F32x8 texel_a0 = _mm256_cvtepi32_ps(texel_i_a);
+      F32x8 texel_b0 = _mm256_cvtepi32_ps(texel_i_b);
+      F32x8 texel_g0 = _mm256_cvtepi32_ps(texel_i_g);
+      F32x8 texel_r0 = _mm256_cvtepi32_ps(texel_i_r);
+
+      F32x8 texel_a1 = _mm256_mul_ps(texel_a0, inv255);
+      F32x8 texel_b1 = _mm256_mul_ps(texel_b0, inv255);
+      F32x8 texel_g1 = _mm256_mul_ps(texel_g0, inv255);
+      F32x8 texel_r1 = _mm256_mul_ps(texel_r0, inv255);
+
+      texel_r1 = _mm256_mul_ps(texel_r1, texel_r1);
+      texel_g1 = _mm256_mul_ps(texel_g1, texel_g1);
+      texel_b1 = _mm256_mul_ps(texel_b1, texel_b1);
+
+      //
+      // Fetch and calculate dst pixels
+      //
+      U32 *dst_memory = destination + x8;
+      S32x8 dst_pixel = _mm256_maskload_epi32((const int *)dst_memory, should_fill);
+
+      S32x8 dst_i_a0 = _mm256_and_si256(dst_pixel, var_0xff000000);
+      S32x8 dst_i_b0 = _mm256_and_si256(dst_pixel, var_0x00ff0000);
+      S32x8 dst_i_g0 = _mm256_and_si256(dst_pixel, var_0x0000ff00);
+      S32x8 dst_i_r0 = _mm256_and_si256(dst_pixel, var_0x000000ff);
+
+      S32x8 dst_i_a1 = _mm256_srai_epi32(dst_i_a0, 24);
+      dst_i_a1 = _mm256_and_si256(dst_i_a1, var_0x000000ff);
+      S32x8 dst_i_b1 = _mm256_srai_epi32(dst_i_b0, 16);
+      S32x8 dst_i_g1 = _mm256_srai_epi32(dst_i_g0, 8);
+      S32x8 dst_i_r1 = dst_i_r0;
+
+      F32x8 dst_a = _mm256_cvtepi32_ps(dst_i_a1);
+      F32x8 dst_b = _mm256_cvtepi32_ps(dst_i_b1);
+      F32x8 dst_g = _mm256_cvtepi32_ps(dst_i_g1);
+      F32x8 dst_r = _mm256_cvtepi32_ps(dst_i_r1);
+
+      dst_a = _mm256_mul_ps(dst_a, inv255);
+      dst_b = _mm256_mul_ps(dst_b, inv255);
+      dst_g = _mm256_mul_ps(dst_g, inv255);
+      dst_r = _mm256_mul_ps(dst_r, inv255);
+
+      dst_r = _mm256_mul_ps(dst_r, dst_r);
+      dst_g = _mm256_mul_ps(dst_g, dst_g);
+      dst_b = _mm256_mul_ps(dst_b, dst_b);
+
+      // Premultiplied alpha
+      {
+        dst_r = _mm256_add_ps(texel_r1, _mm256_mul_ps(_mm256_sub_ps(var1,texel_a1), dst_r));
+        dst_g = _mm256_add_ps(texel_g1, _mm256_mul_ps(_mm256_sub_ps(var1,texel_a1), dst_g));
+        dst_b = _mm256_add_ps(texel_b1, _mm256_mul_ps(_mm256_sub_ps(var1,texel_a1), dst_b));
+        dst_a = _mm256_sub_ps(_mm256_add_ps(texel_a1, dst_a), _mm256_mul_ps(texel_a1,dst_a));
+      }
+
+      // Almost linear to srgb
+      {
+        dst_r = _mm256_sqrt_ps(dst_r);
+        dst_g = _mm256_sqrt_ps(dst_g);
+        dst_b = _mm256_sqrt_ps(dst_b);
+      }
+
+      // Convert to integer format
+      dst_r = _mm256_mul_ps(dst_r, var255);
+      dst_g = _mm256_mul_ps(dst_g, var255);
+      dst_b = _mm256_mul_ps(dst_b, var255);
+      dst_a = _mm256_mul_ps(dst_a, var255);
+
+      S32x8 dst_r_int = _mm256_cvtps_epi32(dst_r);
+      S32x8 dst_g_int = _mm256_cvtps_epi32(dst_g);
+      S32x8 dst_b_int = _mm256_cvtps_epi32(dst_b);
+      S32x8 dst_a_int = _mm256_cvtps_epi32(dst_a);
+
+      S32x8 dst_int_a_shifted = _mm256_slli_epi32(dst_a_int, 24);
+      S32x8 dst_int_b_shifted = _mm256_slli_epi32(dst_b_int, 16);
+      S32x8 dst_int_g_shifted = _mm256_slli_epi32(dst_g_int, 8);
+      S32x8 dst_int_r_shifted = dst_r_int;
+
+      S32x8 packed_abgr0 = _mm256_or_si256(dst_int_a_shifted, dst_int_b_shifted);
+      S32x8 packed_abgr1 = _mm256_or_si256(dst_int_r_shifted, dst_int_g_shifted);
+      S32x8 packed_abgr2 = _mm256_or_si256(packed_abgr1, packed_abgr0);
+
+      _mm256_maskstore_epi32((int *)dst_memory, should_fill, packed_abgr2);
+    }
+    Cy0 -= dx10;
+    Cy1 -= dx21;
+    Cy2 -= dx02;
+    destination += dst->x;
+  }
+  U64 end_time = __rdtsc();
+
+  filled_pixel_total_time += end_time - fill_pixels_begin;
+  filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
+}
