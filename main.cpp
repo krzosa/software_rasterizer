@@ -367,8 +367,8 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
     F32x8 Y = _mm256_set1_ps(y);
     for (S64 x8 = min_x; x8 < max_x; x8+=8) {
-      F32x8 X = _mm256_add_ps(_mm256_set1_ps(x8), var07);
 
+      F32x8 X = _mm256_add_ps(_mm256_set1_ps(x8), var07);
       // F32x8 Cx0 = (p1.y - p0.y) * (p.x - p0.x) - (p1.x - p0.x) * (p.y - p0.y);
       F32x8 px_minus_0x = _mm256_sub_ps(X, p0_x);
       F32x8 py_minus_0y = _mm256_sub_ps(Y, p0_y);
@@ -389,7 +389,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       F32x8 left2 = _mm256_mul_ps(_dy02, px_minus_2x);
       F32x8 right2 = _mm256_mul_ps(_dx02, py_minus_2y);
       F32x8 Cx2 = _mm256_sub_ps(left2,right2);
-
 
       F32x8 should_fill;
         F32x8 i11 = _mm256_set1_ps(x8);
@@ -469,7 +468,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       S32x8 indices1 = _mm256_sub_epi32(var_src_y_minus_one_int, vi);
       S32x8 indices3 = _mm256_mullo_epi32(var_src_x_int, indices1);
       S32x8 indices  = _mm256_add_epi32(indices3, ui);
-
 
       //
       // Fetch and calculate texel values
@@ -1097,11 +1095,12 @@ main(int argc, char **argv) {
     }
 
     ui_end_frame(os.screen, &ui, &font);
-    frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f", os.fps, os.delta_time, os.frame,
-      r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y);
+    frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f"
+        "\nAvg_Time: %llu Time:%llu Count:%llu",
+        os.fps, os.delta_time, os.frame, r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y,
+        filled_pixel_total_time/filled_pixel_count, filled_pixel_total_time, filled_pixel_count);
 
 
-    // log_info("\nAvg_Time: %llu Time:%llu Count:%llu", filled_pixel_total_time/filled_pixel_count, filled_pixel_total_time, filled_pixel_count);
     for(int i = 0; i < ProfileScopeName_Count; i++){
       auto *scope = &profile_scopes[i];
       if(scope->i == 0) continue;
