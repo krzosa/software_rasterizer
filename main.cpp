@@ -367,44 +367,43 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
     F32x8 Y = _mm256_set1_ps(y);
     for (S64 x8 = min_x; x8 < max_x; x8+=8) {
-
       F32x8 X = _mm256_add_ps(_mm256_set1_ps(x8), var07);
-      // F32x8 Cx0 = (p1.y - p0.y) * (p.x - p0.x) - (p1.x - p0.x) * (p.y - p0.y);
+
+
+      // Compute the edges
+      // F32x8 edge0 = (p1.y - p0.y) * (p.x - p0.x) - (p1.x - p0.x) * (p.y - p0.y);
       F32x8 px_minus_0x = _mm256_sub_ps(X, p0_x);
       F32x8 py_minus_0y = _mm256_sub_ps(Y, p0_y);
       F32x8 left0 = _mm256_mul_ps(_dy10, px_minus_0x);
       F32x8 right0 = _mm256_mul_ps(_dx10, py_minus_0y);
-      F32x8 Cx0 = _mm256_sub_ps(left0,right0);
+      F32x8 edge0 = _mm256_sub_ps(left0,right0);
 
       // F32 result = (p2.y - p1.y) * (p.x - p1.x) - (p2.x - p1.x) * (p.y - p1.y);
       F32x8 px_minus_1x = _mm256_sub_ps(X, p1_x);
       F32x8 py_minus_1y = _mm256_sub_ps(Y, p1_y);
       F32x8 left1 = _mm256_mul_ps(_dy21, px_minus_1x);
       F32x8 right1 = _mm256_mul_ps(_dx21, py_minus_1y);
-      F32x8 Cx1 = _mm256_sub_ps(left1,right1);
+      F32x8 edge1 = _mm256_sub_ps(left1,right1);
 
       // F32 result = (p0.y - p2.y) * (p.x - p2.x) - (p0.x - p2.x) * (p.y - p2.y);
       F32x8 px_minus_2x = _mm256_sub_ps(X, p2_x);
       F32x8 py_minus_2y = _mm256_sub_ps(Y, p2_y);
       F32x8 left2 = _mm256_mul_ps(_dy02, px_minus_2x);
       F32x8 right2 = _mm256_mul_ps(_dx02, py_minus_2y);
-      F32x8 Cx2 = _mm256_sub_ps(left2,right2);
+      F32x8 edge2 = _mm256_sub_ps(left2,right2);
 
       F32x8 should_fill;
-        F32x8 i11 = _mm256_set1_ps(x8);
-        F32x8 i12 = _mm256_add_ps(i11, var07);
-        F32x8 i13 = _mm256_cmp_ps(i12, var_max_x, _CMP_LT_OQ);
+      F32x8 test_if_x_should_be_clipped = _mm256_cmp_ps(X, var_max_x, _CMP_LT_OQ);
+      F32x8 test_if_pixel_inside_edge_using_dot_result0  = _mm256_cmp_ps(edge0, var0, _CMP_GE_OQ);
+      F32x8 test_if_pixel_inside_edge_using_dot_result1  = _mm256_cmp_ps(edge1, var0, _CMP_GE_OQ);
+      F32x8 test_if_pixel_inside_edge_using_dot_result2  = _mm256_cmp_ps(edge2, var0, _CMP_GE_OQ);
+      F32x8 dot_result_combination0  = _mm256_and_ps(test_if_pixel_inside_edge_using_dot_result0, test_if_pixel_inside_edge_using_dot_result1);
+      F32x8 dot_result_combination1 = _mm256_and_ps(dot_result_combination0, test_if_pixel_inside_edge_using_dot_result2);
+      should_fill = _mm256_and_ps(test_if_x_should_be_clipped, dot_result_combination1);
 
-        F32x8 i6  = _mm256_cmp_ps(Cx0, var0, _CMP_GE_OQ);
-        F32x8 i7  = _mm256_cmp_ps(Cx1, var0, _CMP_GE_OQ);
-        F32x8 i8  = _mm256_cmp_ps(Cx2, var0, _CMP_GE_OQ);
-        F32x8 i9  = _mm256_and_ps(i6, i7);
-        F32x8 i10 = _mm256_and_ps(i9, i8);
-        should_fill = _mm256_and_ps(i13, i10);
-
-      F32x8 w0 = _mm256_mul_ps(Cx1, inv_area8);
-      F32x8 w1 = _mm256_mul_ps(Cx2, inv_area8);
-      F32x8 w2 = _mm256_mul_ps(Cx0, inv_area8);
+      F32x8 w0 = _mm256_mul_ps(edge1, inv_area8);
+      F32x8 w1 = _mm256_mul_ps(edge2, inv_area8);
+      F32x8 w2 = _mm256_mul_ps(edge0, inv_area8);
 
       // @Todo: Turn this into 1 / interpolated_w, turns out in theory it should be
       // more performant but couldn't make it work
@@ -465,23 +464,23 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       // Origin UV (0,0) is in bottom left
       _mm256_maskstore_epi32((int *)depth_pointer, should_fill, interpolated_w);
 
-      S32x8 indices1 = _mm256_sub_epi32(var_src_y_minus_one_int, vi);
-      S32x8 indices3 = _mm256_mullo_epi32(var_src_x_int, indices1);
-      S32x8 indices  = _mm256_add_epi32(indices3, ui);
+      S32x8 indices_to_fetch0 = _mm256_sub_epi32(var_src_y_minus_one_int, vi);
+      S32x8 indices_to_fetch1 = _mm256_mullo_epi32(var_src_x_int, indices_to_fetch0);
+      S32x8 indices_to_fetch2  = _mm256_add_epi32(indices_to_fetch1, ui);
+      S32x8 indices_to_fetch3 = _mm256_and_si256(indices_to_fetch2, should_fill);
 
       //
       // Fetch and calculate texel values
       //
-      indices = _mm256_and_si256(indices, should_fill);
       S32x8 pixel = _mm256_set_epi32(
-        src->pixels[_mm256_extract_epi32(indices, 7)],
-        src->pixels[_mm256_extract_epi32(indices, 6)],
-        src->pixels[_mm256_extract_epi32(indices, 5)],
-        src->pixels[_mm256_extract_epi32(indices, 4)],
-        src->pixels[_mm256_extract_epi32(indices, 3)],
-        src->pixels[_mm256_extract_epi32(indices, 2)],
-        src->pixels[_mm256_extract_epi32(indices, 1)],
-        src->pixels[_mm256_extract_epi32(indices, 0)]
+        src->pixels[_mm256_extract_epi32(indices_to_fetch3, 7)],
+        src->pixels[_mm256_extract_epi32(indices_to_fetch3, 6)],
+        src->pixels[_mm256_extract_epi32(indices_to_fetch3, 5)],
+        src->pixels[_mm256_extract_epi32(indices_to_fetch3, 4)],
+        src->pixels[_mm256_extract_epi32(indices_to_fetch3, 3)],
+        src->pixels[_mm256_extract_epi32(indices_to_fetch3, 2)],
+        src->pixels[_mm256_extract_epi32(indices_to_fetch3, 1)],
+        src->pixels[_mm256_extract_epi32(indices_to_fetch3, 0)]
       );
 
       S32x8 texel_i_a = _mm256_and_si256(pixel, var_0xff000000);
@@ -489,13 +488,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       S32x8 texel_i_g = _mm256_and_si256(pixel, var_0x0000ff00);
       S32x8 texel_i_r = _mm256_and_si256(pixel, var_0x000000ff);
 
-      // Alpha is done this way because signed integer shift is weird
-      // When sign bit is set it sets all bits that we shift the sign through
-      // So first we shift
       texel_i_a = _mm256_srli_epi32(texel_i_a, 24);
       texel_i_b = _mm256_srli_epi32(texel_i_b, 16);
       texel_i_g = _mm256_srli_epi32(texel_i_g, 8 );
-      texel_i_r = _mm256_srli_epi32(texel_i_r, 0 );
 
       F32x8 texel_a0 = _mm256_cvtepi32_ps(texel_i_a);
       F32x8 texel_b0 = _mm256_cvtepi32_ps(texel_i_b);
@@ -522,10 +517,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       S32x8 dst_i_g0 = _mm256_and_si256(dst_pixel, var_0x0000ff00);
       S32x8 dst_i_r0 = _mm256_and_si256(dst_pixel, var_0x000000ff);
 
-      S32x8 dst_i_a1 = _mm256_srai_epi32(dst_i_a0, 24);
-      dst_i_a1 = _mm256_and_si256(dst_i_a1, var_0x000000ff);
-      S32x8 dst_i_b1 = _mm256_srai_epi32(dst_i_b0, 16);
-      S32x8 dst_i_g1 = _mm256_srai_epi32(dst_i_g0, 8);
+      S32x8 dst_i_a1 = _mm256_srli_epi32(dst_i_a0, 24);
+      S32x8 dst_i_b1 = _mm256_srli_epi32(dst_i_b0, 16);
+      S32x8 dst_i_g1 = _mm256_srli_epi32(dst_i_g0, 8);
       S32x8 dst_i_r1 = dst_i_r0;
 
       F32x8 dst_a = _mm256_cvtepi32_ps(dst_i_a1);
@@ -1097,7 +1091,7 @@ main(int argc, char **argv) {
     ui_end_frame(os.screen, &ui, &font);
     frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f"
         "\nAvg_Time: %llu Time:%llu Count:%llu",
-        os.fps, os.delta_time, os.frame, r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y,
+        os.fps, os.delta_time*1000, os.frame, r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y,
         filled_pixel_total_time/filled_pixel_count, filled_pixel_total_time, filled_pixel_count);
 
 
