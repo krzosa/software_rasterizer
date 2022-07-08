@@ -58,12 +58,12 @@
 /// - [x] Statistics based on profiler data
 /// - [x] Find cool profilers - ExtraSleepy, Vtune
 /// - [ ] Optimizations
-///   - [ ] Inline edge function
-///   - [ ] Expand edge functions to more optimized version
+///   - [x] Inline edge function
+///   - [x] Expand edge functions to more optimized version
 ///   - [ ] Test 4x2 bitmap layout?
 ///   - [ ] Edge function to integer
 ///   - [ ] Use integer bit operations to figure out if plus. (edge0|edge1|edge2)>=0
-///   - [ ] SIMD
+///   - [x] SIMD
 ///   - [ ] Multithreading
 ///
 /// - [x] Text rendering
@@ -76,18 +76,7 @@
 /// - [x] Gamma correct alpha blending for rectangles and bitmaps
 /// - [ ] Plotting of profile data
 ///    - [x] Simple scatter plot
-///
-///
-/// ### Urgent:
-///
-/// - [ ] Simplify the code, especially for the 2d routines
 /// - [x] Asset processor as second program
-///
-///
-#if 0
-#include "tracy/Tracy.hpp"
-#undef assert
-#endif
 
 // #include "obj_dump.cpp"
 #include "multimedia.cpp"
@@ -288,14 +277,12 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
   return result;
 }
 
-#define I(x,i) (((F32 *)&x)[i])
-#define Is(x,i) (((S32 *)&x)[i])
 #define F32x8 __m256
 #define S32x8 __m256i
 
 U64 filled_pixel_count;
 U64 filled_pixel_total_time;
-// #include "optimization_log.cpp"
+#include "optimization_log.cpp"
 
 function
 void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
@@ -439,13 +426,12 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       F32x8 should_fill_term = _mm256_cmp_ps(depth, interpolated_w, _CMP_LT_OQ);
       should_fill = _mm256_and_ps(should_fill, should_fill_term);
 
-#if 0
       // If all pixels are not going to get drawn then opt out
-      // Seems to decrease perf
       F32x8 compare_with_zero = _mm256_cmpeq_epi32(should_fill, var0);
       int mask = _mm256_movemask_epi8(compare_with_zero);
-      if(mask == 1) continue;
-#endif
+      if(mask == 0xffffffff) {
+        continue;
+      }
 
       F32x8 invw0 = _mm256_mul_ps(w0, inv_p0w);
       F32x8 invw1 = _mm256_mul_ps(w1, inv_p1w);
@@ -484,18 +470,21 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       S32x8 indices3 = _mm256_mullo_epi32(var_src_x_int, indices1);
       S32x8 indices  = _mm256_add_epi32(indices3, ui);
 
+
       //
       // Fetch and calculate texel values
       //
-      S32x8 pixel;
-      if(I(should_fill, 0)) Is(pixel, 0) = src->pixels[Is(indices, 0)];
-      if(I(should_fill, 1)) Is(pixel, 1) = src->pixels[Is(indices, 1)];
-      if(I(should_fill, 2)) Is(pixel, 2) = src->pixels[Is(indices, 2)];
-      if(I(should_fill, 3)) Is(pixel, 3) = src->pixels[Is(indices, 3)];
-      if(I(should_fill, 4)) Is(pixel, 4) = src->pixels[Is(indices, 4)];
-      if(I(should_fill, 5)) Is(pixel, 5) = src->pixels[Is(indices, 5)];
-      if(I(should_fill, 6)) Is(pixel, 6) = src->pixels[Is(indices, 6)];
-      if(I(should_fill, 7)) Is(pixel, 7) = src->pixels[Is(indices, 7)];
+      indices = _mm256_and_si256(indices, should_fill);
+      S32x8 pixel = _mm256_set_epi32(
+        src->pixels[_mm256_extract_epi32(indices, 7)],
+        src->pixels[_mm256_extract_epi32(indices, 6)],
+        src->pixels[_mm256_extract_epi32(indices, 5)],
+        src->pixels[_mm256_extract_epi32(indices, 4)],
+        src->pixels[_mm256_extract_epi32(indices, 3)],
+        src->pixels[_mm256_extract_epi32(indices, 2)],
+        src->pixels[_mm256_extract_epi32(indices, 1)],
+        src->pixels[_mm256_extract_epi32(indices, 0)]
+      );
 
       S32x8 texel_i_a = _mm256_and_si256(pixel, var_0xff000000);
       S32x8 texel_i_b = _mm256_and_si256(pixel, var_0x00ff0000);
@@ -505,11 +494,10 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       // Alpha is done this way because signed integer shift is weird
       // When sign bit is set it sets all bits that we shift the sign through
       // So first we shift
-      texel_i_a = _mm256_srai_epi32(texel_i_a, 24);
-      texel_i_a = _mm256_and_si256(texel_i_a, var_0x000000ff);
-      texel_i_b = _mm256_srai_epi32(texel_i_b, 16);
-      texel_i_g = _mm256_srai_epi32(texel_i_g, 8 );
-      texel_i_r = _mm256_srai_epi32(texel_i_r, 0 );
+      texel_i_a = _mm256_srli_epi32(texel_i_a, 24);
+      texel_i_b = _mm256_srli_epi32(texel_i_b, 16);
+      texel_i_g = _mm256_srli_epi32(texel_i_g, 8 );
+      texel_i_r = _mm256_srli_epi32(texel_i_r, 0 );
 
       F32x8 texel_a0 = _mm256_cvtepi32_ps(texel_i_a);
       F32x8 texel_b0 = _mm256_cvtepi32_ps(texel_i_b);
@@ -1013,7 +1001,6 @@ main(int argc, char **argv) {
 
   array_free_all_nodes(&array);
   array_print(&array);
-  __debugbreak();
 
 
   f22 = load_obj_dump(os.perm_arena, "plane.bin"_s);
