@@ -464,14 +464,14 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       // Origin UV (0,0) is in bottom left
       _mm256_maskstore_epi32((int *)depth_pointer, should_fill, interpolated_w);
 
+      //
+      // Fetch and calculate texel values
+      //
       S32x8 indices_to_fetch0 = _mm256_sub_epi32(var_src_y_minus_one_int, vi);
       S32x8 indices_to_fetch1 = _mm256_mullo_epi32(var_src_x_int, indices_to_fetch0);
       S32x8 indices_to_fetch2  = _mm256_add_epi32(indices_to_fetch1, ui);
       S32x8 indices_to_fetch3 = _mm256_and_si256(indices_to_fetch2, should_fill);
 
-      //
-      // Fetch and calculate texel values
-      //
       S32x8 pixel = _mm256_set_epi32(
         src->pixels[_mm256_extract_epi32(indices_to_fetch3, 7)],
         src->pixels[_mm256_extract_epi32(indices_to_fetch3, 6)],
