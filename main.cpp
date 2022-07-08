@@ -759,7 +759,7 @@ UI_SIGNAL_CALLBACK(scene_callback) {
 }
 
 const int ARRAY_LIST_DEFAULT_CAP = 32;
-const int ARRAY_DEFAULT_ALLOCATION_MUL = 2;
+const int ARRAY_LIST_DEFAULT_ALLOCATION_MUL = 2;
 template<class T> struct Array_List;
 template<class T> void array_add_free_node(Arena *arena, Array_List<T> *array, int size);
 
@@ -773,14 +773,11 @@ struct Array_Node{
 
 template<class T>
 struct Array_List{
-  // int first_block_size;
-  int allocation_multiplier = 0;
-  Array_Node<T> *first = 0;
-  Array_Node<T> *last  = 0;
+  S32 block_size            = 0;
+  S32 allocation_multiplier = 0;
+  Array_Node<T> *first      = 0;
+  Array_Node<T> *last       = 0;
   Array_Node<T> *first_free = 0;
-
-  Array_List() = default;
-  // Array_List(Arena *arena, int size){ array_add_free_node(arena, this, size); }
 };
 
 template<class T>
@@ -840,8 +837,6 @@ template<class T>
 void make_sure_there_is_room_for_item_count(Arena *arena, Array_List<T> *array, int item_count){
   if(array->last == 0 || array->last->len + item_count > array->last->cap){
     // Not enough space we need to get a new block
-
-    if(!array->allocation_multiplier) array->allocation_multiplier = ARRAY_DEFAULT_ALLOCATION_MUL;
     Array_Node<T> *node = 0;
 
     // Iterate the free list to check if we have a block of required size there
@@ -856,10 +851,10 @@ void make_sure_there_is_room_for_item_count(Arena *arena, Array_List<T> *array, 
 
     // We don't have a block on the free list need to allocate
     if(!node){
-      assert(array->allocation_multiplier);
-      int block_cap = array->last ? array->last->cap : ARRAY_LIST_DEFAULT_CAP / array->allocation_multiplier;
-      block_cap *= array->allocation_multiplier;
-      node = array_allocate_node<T>(arena, block_cap);
+      if(!array->allocation_multiplier) array->allocation_multiplier = ARRAY_LIST_DEFAULT_ALLOCATION_MUL;
+      if(!array->block_size)            array->block_size = ARRAY_LIST_DEFAULT_CAP;
+      node = array_allocate_node<T>(arena, array->block_size);
+      array->block_size *= array->allocation_multiplier;
     }
 
     assert(node);
@@ -899,25 +894,7 @@ void array_free_node(Array_List<T> *array, Array_Node<T> *node){
   assert(found);
 #endif
 
-
-  // Remove from array list
-  if(array->first == array->last){
-    assert(node == array->first);
-    array->first = array->last = 0;
-  }
-  else if(array->last == node){
-    array->last = array->last->prev;
-    array->last->next = 0;
-  }
-  else if(array->first == node){
-    array->first = array->first->next;
-    array->first->prev = 0;
-  }
-  else{
-    node->prev->next = node->next;
-    node->next->prev = node->prev;
-  }
-
+  DLLQueueRemove(array->first, array->last, node);
   DLLFreeListAdd(array->first_free, node);
 }
 
@@ -932,7 +909,7 @@ void array_free_all_nodes(Array_List<T> *array){
 }
 
 void array_print(Array_List<int> *array){
-  log_info("Nodes: ");
+  log_info("\nNodes: ");
   for(Array_Node<int> *it = array->first; it; it=it->next){
     log_info("%d", it->cap);
     if(it->next) log_info("->");
@@ -949,6 +926,66 @@ void array_print(Array_List<int> *array){
     log_info("%d", it->cap);
     if(it->prev) log_info("<-");
   }
+
+  //
+  // Make sure going backwards yields same results as going forward
+  //
+  Scratch scratch;
+  Array<Array_Node<int> *> nodes = {scratch};
+  for(Array_Node<int> *it = array->first; it; it=it->next){
+    nodes.add(it);
+  }
+
+  S32 array_i = nodes.len;
+  for(Array_Node<int> *it = array->last; it; it=it->prev){
+    Array_Node<int> *node_from_array = nodes.data[--array_i];
+    assert(it == node_from_array);
+  }
+
+  //
+  // Same test but for free list
+  //
+  nodes.clear();
+  Array_Node<int> *last = 0;
+  for(auto it = array->first_free; it; it=it->next){
+    nodes.add(it);
+    if(!it->next) last = it;
+  }
+
+  array_i = nodes.len;
+  for(Array_Node<int> *it = last; it; it=it->prev){
+    Array_Node<int> *node_from_array = nodes.data[--array_i];
+    assert(it == node_from_array);
+  }
+
+}
+
+function void
+test_array_list(){
+  Scratch scratch;
+  Array_List<int> array{4, 2};
+  for(int i = 0; i < 512; i++){
+    array_add(scratch, &array, i);
+  }
+
+  for(Array_List_Iter<int> i = iter_make(&array); i.item; iter_next(&i)){
+    assert(i.index == *i.item);
+  }
+  assert(*array_get(&array, 22) == 22);
+  assert(*array_get(&array, 65) == 65);
+  assert(*array_get(&array, 200) == 200);
+
+  array_print(&array);
+  array_free_node(&array, array.last->prev);
+  array_free_node(&array, array.last->prev->prev);
+  array_print(&array);
+
+  for(int i = 0; i < 33; i++){
+    array_add(scratch, &array, i);
+  }
+
+  array_print(&array);
+  __debugbreak();
 }
 
 FILE *global_file;
@@ -970,30 +1007,7 @@ main(int argc, char **argv) {
   os.window_resizable = 1;
   assert(os_init());
   Font font = os_load_font(os.perm_arena, 12*os.dpi_scale, "Arial", 0);
-  Scratch scratch;
-  Array_List<int> array;
-  for(int i = 0; i < 512; i++){
-    array_add(scratch, &array, i);
-  }
-
-  for(Array_List_Iter<int> i = iter_make(&array); i.item; iter_next(&i)){
-    assert(i.index == *i.item);
-  }
-  assert(*array_get(&array, 22) == 22);
-  assert(*array_get(&array, 65) == 65);
-  assert(*array_get(&array, 200) == 200);
-
-  array_free_node(&array, array.last);
-  // array_free_node(&array, array.last);
-  // array_free_node(&array, array.last);
-
-  for(int i = 0; i < 33; i++){
-    array_add(scratch, &array, i);
-  }
-
-  array_free_all_nodes(&array);
-  array_print(&array);
-
+  test_array_list();
 
   f22 = load_obj_dump(os.perm_arena, "plane.bin"_s);
   sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);
