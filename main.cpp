@@ -760,22 +760,21 @@ UI_SIGNAL_CALLBACK(scene_callback) {
 
 const int ARRAY_LIST_DEFAULT_CAP = 32;
 const int ARRAY_LIST_DEFAULT_ALLOCATION_MUL = 2;
-template<class T> struct Array_List;
 template<class T> struct Array_List_Iter;
-template<class T> void array_add_free_node(Arena *arena, Array_List<T> *array, int size);
 
 template<class T>
 struct Array_Node{
   Array_Node<T> *next;
   Array_Node<T> *prev;
-  int cap, len;
+  int cap;
+  int len;
   T data[];
 };
 
 template<class T>
 struct Array_List{
-  S32 block_size            = 0;
-  S32 allocation_multiplier = 0;
+  int block_size            = 0;
+  int allocation_multiplier = 0;
   Array_Node<T> *first      = 0;
   Array_Node<T> *last       = 0;
   Array_Node<T> *first_free = 0;
@@ -798,21 +797,23 @@ struct Array_List_Iter{
 
 template<class T>
 void Array_List_Iter<T>::next(){
-    if(node_index + 1 >= node->len){
-      node = node->next;
-      node_index = -1;
-      item = 0;
-    }
-
-    if(node){
-      node_index += 1;
-      index += 1;
-      item = node->data + node_index;
-    }
+  if(node_index + 1 >= node->len){
+    node = node->next;
+    node_index = -1;
+    item = 0;
   }
 
+  if(node){
+    node_index += 1;
+    index += 1;
+    item = node->data + node_index;
+  }
+}
+
 template<class T>
-B32 Array_List_Iter<T>::is_valid(){ return item != 0; }
+B32 Array_List_Iter<T>::is_valid(){
+  return item != 0;
+}
 
 template<class T>
 Array_List_Iter<T> Array_List<T>::iter(){
@@ -832,7 +833,7 @@ Array_Node<T> *array_allocate_node(Arena *arena, int size){
 }
 
 template<class T>
-void array_add_free_node(Arena *arena, Array_List<T> *array, int size){
+void array_alloc_free_node(Arena *arena, Array_List<T> *array, int size){
   Array_Node<T> *node = array_allocate_node<T>(arena, size);
   DLLFreeListAdd(array->first_free, node);
 }
@@ -857,6 +858,8 @@ void make_sure_there_is_room_for_item_count(Arena *arena, Array_List<T> *array, 
     if(!node){
       if(!array->allocation_multiplier) array->allocation_multiplier = ARRAY_LIST_DEFAULT_ALLOCATION_MUL;
       if(!array->block_size)            array->block_size = ARRAY_LIST_DEFAULT_CAP;
+      if(item_count > array->block_size)
+        array->block_size = item_count*2;
       node = array_allocate_node<T>(arena, array->block_size);
       array->block_size *= array->allocation_multiplier;
     }
@@ -881,6 +884,14 @@ template<class T>
 void array_add(Arena *arena, Array_List<T> *array, T item){
   make_sure_there_is_room_for_item_count(arena, array, 1);
   array->last->data[array->last->len++] = item;
+}
+
+template<class T>
+T *array_alloc(Arena *arena, Array_List<T> *array, int count){
+  make_sure_there_is_room_for_item_count(arena, array, count);
+  T *result = array->last->data;
+  array->last->len += count;
+  return result;
 }
 
 template<class T>
@@ -910,6 +921,35 @@ void array_free_all_nodes(Array_List<T> *array){
   if(array->first_free) array->first_free->prev = array->last;
   array->first_free = array->first;
   array->last = array->first = 0;
+}
+
+template<class T>
+void array_unordered_remove(Array_List<T> *array, int index){
+  auto last = array->last;
+  assert(last);
+  assert(last->data);
+  assert(last->len != 0);
+  T *indexed_value = array_get(array, index);
+  T *last_value    = last->data + (last->len-1);
+
+  T temp         = *indexed_value;
+  *indexed_value = *last_value;
+  *last_value    =  temp;
+
+  array_pop(array);
+}
+
+template<class T>
+T array_pop(Array_List<T> *array){
+  assert(array->last != 0);
+  assert(array->last->len > 0);
+  T result = array->last->data[--array->last->len];
+  if(array->last->len == 0){
+    auto node = array->last;
+    DLLQueueRemove(array->first, array->last, node);
+    DLLFreeListAdd(array->first_free, node);
+  }
+  return result;
 }
 
 void array_print(Array_List<int> *array){
@@ -967,31 +1007,58 @@ void array_print(Array_List<int> *array){
 function void
 test_array_list(){
   Scratch scratch;
-  Array_List<int> array{32, 1};
-  for(int i = 0; i < 512; i++){
-    array_add(scratch, &array, i);
+  log_info("\nArray_List:%d Array_Node:%d Array:%d", (int)sizeof(Array_List<int>), (int)sizeof(Array_Node<int>), (int)sizeof(Array<int>));
+
+  {
+    Array_List<int> array{32,1};
+    for(int i = 0; i < 33; i++){
+      array_add(scratch, &array, i);
+    }
+    assert(array_pop(&array) == 32);
+    assert(array_pop(&array) == 31);
+    array_add(scratch, &array, 31);
+    array_add(scratch, &array, 32);
+    assert(array_pop(&array) == 32);
+    assert(array_pop(&array) == 31);
+
+    array_add(scratch, &array, 31);
+    array_add(scratch, &array, 32);
+
+    array_unordered_remove(&array, 31);
+    array_unordered_remove(&array, 31);
+
+    assert(array_pop(&array) == 30);
+    assert(array_pop(&array) == 29);
   }
 
-  For_It(array){
-    assert(it.index == *it.item);
+  {
+    Array_List<int> array;
+    for(int i = 0; i < 100000; i++){
+      array_add(scratch, &array, i);
+    }
+
+    For_It(array){
+      assert(it.index == *it.item);
+    }
+
+    assert(*array_get(&array, 22) == 22);
+    assert(*array_get(&array, 65) == 65);
+    assert(*array_get(&array, 200) == 200);
+
+    array_print(&array);
+    array_free_node(&array, array.last->prev);
+    array_free_node(&array, array.last->prev);
+    array_free_node(&array, array.last->prev);
+    array_free_node(&array, array.last->prev);
+    array_free_node(&array, array.last->prev->prev);
+    array_print(&array);
+
+    for(int i = 0; i < 10000; i++){
+      array_add(scratch, &array, i);
+    }
+
+    array_print(&array);
   }
-  assert(*array_get(&array, 22) == 22);
-  assert(*array_get(&array, 65) == 65);
-  assert(*array_get(&array, 200) == 200);
-
-  array_print(&array);
-  array_free_node(&array, array.last->prev);
-  array_free_node(&array, array.last->prev);
-  array_free_node(&array, array.last->prev);
-  array_free_node(&array, array.last->prev);
-  array_free_node(&array, array.last->prev->prev);
-  array_print(&array);
-
-  for(int i = 0; i < 33; i++){
-    array_add(scratch, &array, i);
-  }
-
-  array_print(&array);
   __debugbreak();
 }
 
