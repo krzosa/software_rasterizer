@@ -874,7 +874,9 @@ T *array_get(Array_List<T> *array, int index){
   int i = 0;
   For_List(array->first){
     int lookup_i = index - i;
-    if(lookup_i < it->len) return it->data + lookup_i;
+    if(lookup_i < it->len) {
+      return it->data + lookup_i;
+    }
     i += it->cap;
   }
   return 0;
@@ -924,7 +926,42 @@ void array_free_all_nodes(Array_List<T> *array){
 }
 
 template<class T>
-void array_unordered_remove(Array_List<T> *array, int index){
+T array_ordered_remove(Array_List<T> *array, int index){
+  Array_Node<T> *node = 0;
+  int i = 0;
+  T *item = 0;
+
+  // Get node from array
+  For_List(array->first){
+    int lookup_i = index - i;
+    if(lookup_i < it->len) {
+      node = it;
+      i = lookup_i;
+      item = it->data + lookup_i;
+      break;
+    }
+    i += it->cap;
+  }
+
+  assert(node);
+  assert(item);
+  T result = *item;
+
+  // Check if we need to deallocate the block
+  if(node->len == 1) {
+    array_free_node(array, node);
+    return result;
+  }
+
+
+  // We need to move part of the block to fill the new empty spot
+  int right_count = (--node->len) - i;
+  memory_copy(item, item+1, sizeof(T)*right_count);
+  return result;
+}
+
+template<class T>
+T array_unordered_remove(Array_List<T> *array, int index){
   auto last = array->last;
   assert(last);
   assert(last->data);
@@ -936,7 +973,7 @@ void array_unordered_remove(Array_List<T> *array, int index){
   *indexed_value = *last_value;
   *last_value    =  temp;
 
-  array_pop(array);
+  return array_pop(array);
 }
 
 template<class T>
@@ -945,9 +982,7 @@ T array_pop(Array_List<T> *array){
   assert(array->last->len > 0);
   T result = array->last->data[--array->last->len];
   if(array->last->len == 0){
-    auto node = array->last;
-    DLLQueueRemove(array->first, array->last, node);
-    DLLFreeListAdd(array->first_free, node);
+    array_free_node(array, array->last);
   }
   return result;
 }
@@ -1029,6 +1064,14 @@ test_array_list(){
 
     assert(array_pop(&array) == 30);
     assert(array_pop(&array) == 29);
+    array_add(scratch, &array, 29);
+    array_add(scratch, &array, 30);
+    array_add(scratch, &array, 31);
+    array_add(scratch, &array, 32);
+    array_ordered_remove(&array, 32);
+    array_ordered_remove(&array, 16);
+    array_ordered_remove(&array, 0);
+    array_print(&array);
   }
 
   {
