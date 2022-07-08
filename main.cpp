@@ -364,11 +364,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
   U64 fill_pixels_begin = __rdtsc();
   for (S64 y = min_y; y < max_y; y++) {
-
     F32x8 Y = _mm256_set1_ps(y);
     for (S64 x8 = min_x; x8 < max_x; x8+=8) {
       F32x8 X = _mm256_add_ps(_mm256_set1_ps(x8), var07);
-
 
       // Compute the edges
       // F32x8 edge0 = (p1.y - p0.y) * (p.x - p0.x) - (p1.x - p0.x) * (p.y - p0.y);
@@ -376,6 +374,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       F32x8 py_minus_0y = _mm256_sub_ps(Y, p0_y);
       F32x8 left0 = _mm256_mul_ps(_dy10, px_minus_0x);
       F32x8 right0 = _mm256_mul_ps(_dx10, py_minus_0y);
+      // F32x8 edge0 = _mm256_fmsub_ps(_dy10, px_minus_0x, right0);
       F32x8 edge0 = _mm256_sub_ps(left0,right0);
 
       // F32 result = (p2.y - p1.y) * (p.x - p1.x) - (p2.x - p1.x) * (p.y - p1.y);
@@ -1069,8 +1068,9 @@ test_array_list(){
     array_add(scratch, &array, 31);
     array_add(scratch, &array, 32);
     array_ordered_remove(&array, 32);
-    array_ordered_remove(&array, 16);
     array_ordered_remove(&array, 0);
+    array_ordered_remove(&array, 16);
+    array_ordered_remove(&array, 29);
     array_print(&array);
   }
 
@@ -1102,7 +1102,7 @@ test_array_list(){
 
     array_print(&array);
   }
-  __debugbreak();
+  // __debugbreak();
 }
 
 FILE *global_file;
