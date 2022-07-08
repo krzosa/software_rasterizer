@@ -62,7 +62,7 @@ function UIWidget *ui_new_widget(Allocator *arena, UIWidgetKind kind) {
 }
 
 function void ui_push_child(UIWidget *widget, UIWidget *child) {
-  DLLQueuePush(widget->first_child, widget->last_child, child);
+  DLLQueueAdd(widget->first_child, widget->last_child, child);
 }
 
 function UIWidget *ui_push_child(Arena *arena, UIWidget *widget, UIWidgetKind kind) {

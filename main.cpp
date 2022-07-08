@@ -761,6 +761,7 @@ UI_SIGNAL_CALLBACK(scene_callback) {
 const int ARRAY_LIST_DEFAULT_CAP = 32;
 const int ARRAY_LIST_DEFAULT_ALLOCATION_MUL = 2;
 template<class T> struct Array_List;
+template<class T> struct Array_List_Iter;
 template<class T> void array_add_free_node(Arena *arena, Array_List<T> *array, int size);
 
 template<class T>
@@ -778,6 +779,9 @@ struct Array_List{
   Array_Node<T> *first      = 0;
   Array_Node<T> *last       = 0;
   Array_Node<T> *first_free = 0;
+
+  // Iterator method
+  Array_List_Iter<T> iter();
 };
 
 template<class T>
@@ -786,37 +790,37 @@ struct Array_List_Iter{
   int index;
   Array_Node<T> *node;
   int node_index;
+
+  // Methods
+  void next();
+  force_inline B32 is_valid();
 };
 
 template<class T>
-void iter_next(Array_List_Iter<T> *iter){
-  if(iter->node_index + 1 >= iter->node->len){
-    iter->node = iter->node->next;
-    iter->node_index = -1;
-    iter->item = 0;
-  }
+void Array_List_Iter<T>::next(){
+    if(node_index + 1 >= node->len){
+      node = node->next;
+      node_index = -1;
+      item = 0;
+    }
 
-  if(iter->node){
-    iter->node_index += 1;
-    iter->index += 1;
-    iter->item = iter->node->data + iter->node_index;
+    if(node){
+      node_index += 1;
+      index += 1;
+      item = node->data + node_index;
+    }
   }
-}
 
 template<class T>
-Array_List_Iter<T> iter_make(Array_List<T> *array){
+B32 Array_List_Iter<T>::is_valid(){ return item != 0; }
+
+template<class T>
+Array_List_Iter<T> Array_List<T>::iter(){
   Array_List_Iter<T> result = {};
-  result.node = array->first;
+  result.node = this->first;
   result.index = result.node_index = -1;
-  iter_next(&result);
+  result.next();
   return result;
-}
-
-template<class T>
-void array_remove_from_free_list(Array_List<T> *array, Array_Node<T> *it){
-  if(it->prev) it->prev->next = it->next;
-  if(it->next) it->next->prev = it->prev;
-  if(array->first_free == it) array->first_free = array->first_free->next;
 }
 
 template<class T>
@@ -840,9 +844,9 @@ void make_sure_there_is_room_for_item_count(Arena *arena, Array_List<T> *array, 
     Array_Node<T> *node = 0;
 
     // Iterate the free list to check if we have a block of required size there
-    for(Array_Node<T> *it = array->first_free; it; it=it->next){
+    For_List(array->first_free){
       if(it->cap >= item_count){
-        array_remove_from_free_list(array, it);
+        DLLFreeListRemove(array->first_free, it);
         node = it;
         node->len = 0;
         break;
@@ -858,14 +862,14 @@ void make_sure_there_is_room_for_item_count(Arena *arena, Array_List<T> *array, 
     }
 
     assert(node);
-    DLLQueuePushLast(array->first, array->last, node);
+    DLLQueueAddLast(array->first, array->last, node);
   }
 }
 
 template<class T>
 T *array_get(Array_List<T> *array, int index){
   int i = 0;
-  for(Array_Node<T> *it = array->first; it; it=it->next){
+  For_List(array->first){
     int lookup_i = index - i;
     if(lookup_i < it->len) return it->data + lookup_i;
     i += it->cap;
@@ -885,7 +889,7 @@ void array_free_node(Array_List<T> *array, Array_Node<T> *node){
 #if 1
   // Make sure it's actually in array list
   B32 found = false;
-  for(Array_Node<T> *it = array->first; it; it=it->next){
+  For_List(array->first){
     if(it == node){
       found = true;
       break;
@@ -963,19 +967,22 @@ void array_print(Array_List<int> *array){
 function void
 test_array_list(){
   Scratch scratch;
-  Array_List<int> array{4, 2};
+  Array_List<int> array{32, 1};
   for(int i = 0; i < 512; i++){
     array_add(scratch, &array, i);
   }
 
-  for(Array_List_Iter<int> i = iter_make(&array); i.item; iter_next(&i)){
-    assert(i.index == *i.item);
+  For_It(array){
+    assert(it.index == *it.item);
   }
   assert(*array_get(&array, 22) == 22);
   assert(*array_get(&array, 65) == 65);
   assert(*array_get(&array, 200) == 200);
 
   array_print(&array);
+  array_free_node(&array, array.last->prev);
+  array_free_node(&array, array.last->prev);
+  array_free_node(&array, array.last->prev);
   array_free_node(&array, array.last->prev);
   array_free_node(&array, array.last->prev->prev);
   array_print(&array);
