@@ -372,24 +372,20 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       // F32x8 edge0 = (p1.y - p0.y) * (p.x - p0.x) - (p1.x - p0.x) * (p.y - p0.y);
       F32x8 px_minus_0x = _mm256_sub_ps(X, p0_x);
       F32x8 py_minus_0y = _mm256_sub_ps(Y, p0_y);
-      F32x8 left0 = _mm256_mul_ps(_dy10, px_minus_0x);
       F32x8 right0 = _mm256_mul_ps(_dx10, py_minus_0y);
-      // F32x8 edge0 = _mm256_fmsub_ps(_dy10, px_minus_0x, right0);
-      F32x8 edge0 = _mm256_sub_ps(left0,right0);
+      F32x8 edge0 = _mm256_fmsub_ps(_dy10, px_minus_0x, right0);
 
       // F32 result = (p2.y - p1.y) * (p.x - p1.x) - (p2.x - p1.x) * (p.y - p1.y);
       F32x8 px_minus_1x = _mm256_sub_ps(X, p1_x);
       F32x8 py_minus_1y = _mm256_sub_ps(Y, p1_y);
-      F32x8 left1 = _mm256_mul_ps(_dy21, px_minus_1x);
       F32x8 right1 = _mm256_mul_ps(_dx21, py_minus_1y);
-      F32x8 edge1 = _mm256_sub_ps(left1,right1);
+      F32x8 edge1 = _mm256_fmsub_ps(_dy21, px_minus_1x, right1);
 
       // F32 result = (p0.y - p2.y) * (p.x - p2.x) - (p0.x - p2.x) * (p.y - p2.y);
       F32x8 px_minus_2x = _mm256_sub_ps(X, p2_x);
       F32x8 py_minus_2y = _mm256_sub_ps(Y, p2_y);
-      F32x8 left2 = _mm256_mul_ps(_dy02, px_minus_2x);
       F32x8 right2 = _mm256_mul_ps(_dx02, py_minus_2y);
-      F32x8 edge2 = _mm256_sub_ps(left2,right2);
+      F32x8 edge2 = _mm256_fmsub_ps(_dy02, px_minus_2x, right2);
 
       F32x8 should_fill;
       F32x8 test_if_x_should_be_clipped = _mm256_cmp_ps(X, var_max_x, _CMP_LT_OQ);
@@ -409,13 +405,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
       // @Old_Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
       // but why waste an instruction, the smaller the depth value the farther the object
-      F32x8 interpolated_w;
-        F32x8 i14 = _mm256_mul_ps(one_over_p0w, w0); //
-        F32x8 i15 = _mm256_mul_ps(one_over_p1w, w1);
-        F32x8 i16 = _mm256_mul_ps(one_over_p2w, w2);
-        F32x8 i17 = _mm256_add_ps(i14, i15);
-        F32x8 i18 = _mm256_add_ps(i16, i17);
-        interpolated_w = {i18};
+      F32x8 interpolated_w = _mm256_mul_ps(one_over_p0w, w0);
+      interpolated_w = _mm256_fmadd_ps(one_over_p1w, w1, interpolated_w);
+      interpolated_w = _mm256_fmadd_ps(one_over_p2w, w2, interpolated_w);
 
       F32 *depth_pointer = (depth_buffer + (x8 + y * dst->x));
       F32x8 depth = _mm256_loadu_ps(depth_pointer);
@@ -434,18 +426,13 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
       F32x8 invw1 = _mm256_mul_ps(w1, inv_p1w);
       F32x8 invw2 = _mm256_mul_ps(w2, inv_p2w);
 
-      F32x8 u_term0 = _mm256_mul_ps(var_tex0x, invw0);
-      F32x8 u_term1 = _mm256_mul_ps(var_tex1x, invw1);
-      F32x8 u_term2 = _mm256_mul_ps(var_tex2x, invw2);
-      F32x8 u_term3 = _mm256_add_ps(u_term0, u_term1);
-      F32x8 u0      = _mm256_add_ps(u_term2, u_term3);
+      F32x8 u0 = _mm256_mul_ps(var_tex0x, invw0);
+      u0 = _mm256_fmadd_ps(var_tex1x, invw1, u0);
+      u0 = _mm256_fmadd_ps(var_tex2x, invw2, u0);
 
-      F32x8 v_term0 = _mm256_mul_ps(var_tex0y, invw0);
-      F32x8 v_term1 = _mm256_mul_ps(var_tex1y, invw1);
-      F32x8 v_term2 = _mm256_mul_ps(var_tex2y, invw2);
-      F32x8 v_term3 = _mm256_add_ps(v_term0, v_term1);
-      F32x8 v0      = _mm256_add_ps(v_term2, v_term3);
-
+      F32x8 v0 = _mm256_mul_ps(var_tex0y, invw0);
+      v0 = _mm256_fmadd_ps(var_tex1y, invw1, v0);
+      v0 = _mm256_fmadd_ps(var_tex2y, invw2, v0);
 
       F32x8 u1 = _mm256_div_ps(u0, interpolated_w);
       F32x8 v1 = _mm256_div_ps(v0, interpolated_w);
@@ -537,9 +524,10 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
 
       // Premultiplied alpha
       {
-        dst_r = _mm256_add_ps(texel_r1, _mm256_mul_ps(_mm256_sub_ps(var1,texel_a1), dst_r));
-        dst_g = _mm256_add_ps(texel_g1, _mm256_mul_ps(_mm256_sub_ps(var1,texel_a1), dst_g));
-        dst_b = _mm256_add_ps(texel_b1, _mm256_mul_ps(_mm256_sub_ps(var1,texel_a1), dst_b));
+        F32x8 inv_texel_a = _mm256_sub_ps(var1,texel_a1);
+        dst_r = _mm256_fmadd_ps(inv_texel_a, dst_r, texel_r1);
+        dst_g = _mm256_fmadd_ps(inv_texel_a, dst_g, texel_g1);
+        dst_b = _mm256_fmadd_ps(inv_texel_a, dst_b, texel_b1);
         dst_a = _mm256_sub_ps(_mm256_add_ps(texel_a1, dst_a), _mm256_mul_ps(texel_a1,dst_a));
       }
 
@@ -1109,7 +1097,7 @@ FILE *global_file;
 function void
 windows_log(Log_Kind kind, String string, char *file, int line){
   // fprintf(global_file, "%s", string.str);
-  OutputDebugStringA((const char *)string.str);
+  // OutputDebugStringA((const char *)string.str);
 }
 
 int
