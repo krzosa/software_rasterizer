@@ -82,12 +82,19 @@
 #include "multimedia.cpp"
 #include "obj.cpp"
 #include "vec.cpp"
+#include "work_queue.cpp"
 #define PROFILE_SCOPE(x)
 
 struct Vertex {
   Vec3 pos;
   Vec2 tex;
   Vec3 norm;
+};
+
+struct Render_Command{
+  Bitmap *src;
+  Vec4 p0, p1, p2;
+  Vec2 tex0, tex1, tex2;
 };
 
 struct Render {
@@ -105,6 +112,14 @@ struct Render {
   Bitmap plot;
   Bitmap screen320;
   F32 *depth320;
+
+  WorkQueue work_queue;
+  Array_List<Render_Command> commands;
+};
+
+struct Render_Tile_Job_Data{
+  Render *r;
+  Rect2 region;
 };
 
 enum Scene {
@@ -280,31 +295,31 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
 #define F32x8 __m256
 #define S32x8 __m256i
 
-S32 render_triangle_test_case_number = 3;
+S32 render_triangle_test_case_number = 5;
 S32 render_triangle_test_case_angle = 1;
 U64 filled_pixel_count;
 U64 filled_pixel_cycles;
 U64 triangle_count;
 #include "optimization_log.cpp"
 
+
 function
-void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
+void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src,
                            Vec4 p0,   Vec4 p1,   Vec4 p2,
-                           Vec2 tex0, Vec2 tex1, Vec2 tex2,
-                           Vec3 norm0, Vec3 norm1, Vec3 norm2) {
+                           Vec2 tex0, Vec2 tex1, Vec2 tex2, Rect2 rect) {
   if(src->pixels == 0) return;
 
-  U64 fill_pixels_begin = __rdtsc();
+  // U64 fill_pixels_begin = __rdtsc();
 
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
   F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
   F32 max_y1 = (F32)(max(p0.y, max(p1.y, p2.y)));
 
-  S64 min_x = (S64)max(0.f, floor(min_x1));
-  S64 min_y = (S64)max(0.f, floor(min_y1));
-  S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
-  S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
+  S64 min_x = (S64)max(rect.min_x, floor(min_x1));
+  S64 min_y = (S64)max(rect.min_y, floor(min_y1));
+  S64 max_x = (S64)min(rect.max_x, ceil(max_x1));
+  S64 max_y = (S64)min(rect.max_y, ceil(max_y1));
 
   if (min_y >= max_y) return;
   if (min_x >= max_x) return;
@@ -565,17 +580,22 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
     destination += dst->x;
   }
 
-  filled_pixel_cycles += __rdtsc() - fill_pixels_begin;
-  filled_pixel_count  += (max_x - min_x)*(max_y - min_y);
+  // filled_pixel_cycles += __rdtsc() - fill_pixels_begin;
+  // filled_pixel_count  += (max_x - min_x)*(max_y - min_y);
+}
+
+WORK_QUEUE_CALLBACK(draw_tile){
+  auto d = (Render_Tile_Job_Data *)data;
+  Render *r = d->r;
+  For_It(r->commands){
+    draw_triangle_nearest(&r->screen320, r->depth320, it.item->src, it.item->p0, it.item->p1, it.item->p2, it.item->tex0, it.item->tex1, it.item->tex2, d->region);
+  }
 }
 
 function
 void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *mesh, Vec3 *vertices, Vec2 *tex_coords, Vec3 *normals) {
-  // ZoneNamedN(m, "draw_all_meshes", true);
-  PROFILE_SCOPE(draw_all_meshes);
+
   for (int i = 0; i < mesh->indices.len; i++) {
-    PROFILE_SCOPE(draw_set_of_mesh_indices);
-    // ZoneNamedN(m, "draw_single_mesh", true);
     Obj_Index *index = mesh->indices.data + i;
     Bitmap *image = &r->img;
     if(index->material_id != -1) {
@@ -615,7 +635,7 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
     Vec3 p0_to_p1 = vert[1].pos - vert[0].pos;
     Vec3 p0_to_p2 = vert[2].pos - vert[0].pos;
     Vec3 normal = normalize(cross(p0_to_p1, p0_to_p2));
-    Vec3 light_direction =  mat4_rotation_x(light_rotation) * vec3(0, 0, 1);
+    // Vec3 light_direction =  mat4_rotation_x(light_rotation) * vec3(0, 0, 1);
 
     if (dot(normal, p0_to_camera) > 0) { //@Note: Backface culling
       /// ## Clipping
@@ -711,6 +731,26 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
       triangle_count++;
       if (in_count > 3) triangle_count++;
 
+      Render_Command *command = array_alloc(os.perm_arena, &r->commands);
+      command->src = image;
+      command->p0 = in[0].pos;
+      command->p1 = in[1].pos;
+      command->p2 = in[2].pos;
+      command->tex0 = in[0].tex;
+      command->tex1 = in[1].tex;
+      command->tex2 = in[2].tex;
+      if(in_count > 3){
+        Render_Command *command = array_alloc(os.perm_arena, &r->commands);
+        command->src = image;
+        command->p0 = in[0].pos;
+        command->p1 = in[2].pos;
+        command->p2 = in[3].pos;
+        command->tex0 = in[0].tex;
+        command->tex1 = in[2].tex;
+        command->tex2 = in[3].tex;
+      }
+
+#if 0
       switch(render_triangle_test_case_number){
         case 0: break;
         case 1:
@@ -729,10 +769,11 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
           if (in_count > 3) draw_triangle_nearest_simd_without_overloads(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
         break;
         case 5:
-          draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
-          if (in_count > 3) draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+          draw_triangle_nearest_final(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
+          if (in_count > 3) draw_triangle_nearest_final(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
         break;
       }
+#endif
     }
   }
 }
@@ -779,8 +820,8 @@ main(int argc, char **argv) {
   thread_ctx.log_proc = windows_log;
   fprintf(global_file, "\n---------------------");
 
-  os.window_size.x = 1280;
-  os.window_size.y = 720;
+  os.window_size.x = 1920;
+  os.window_size.y = 1080;
   os.window_resizable = 1;
   assert(os_init());
   Font font = os_load_font(os.perm_arena, 12*os.dpi_scale, "Arial", 0);
@@ -792,13 +833,15 @@ main(int argc, char **argv) {
   // sponza = &sponza_obj;
   scene_callback();
 
-  int screen_x = 1280;
-  int screen_y = 720;
+  int screen_x = os.window_size.x;
+  int screen_y = os.window_size.y;
 
   r.camera_pos = vec3(-228,94.5,-107);
   r.camera_yaw = vec2(-1.25, 0.21);
   r.screen320 = {(U32 *)arena_push_size(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   r.depth320 = (F32 *)arena_push_size(os.perm_arena, sizeof(F32) * screen_x * screen_y);
+  ThreadStartupInfo thread_infos[16] = {};
+  init_work_queue(&r.work_queue, buff_cap(thread_infos), thread_infos);
 
   String frame_data = {};
   String raster_details = {};
@@ -869,6 +912,31 @@ main(int argc, char **argv) {
     }
 
 
+    Render_Tile_Job_Data tile_job_data[16];
+    S32 x_tiles = 1;
+    S32 y_tiles = 16;
+    F32 block_size_x = r.screen320.x / x_tiles;
+    F32 block_size_y = r.screen320.y / y_tiles;
+    S32 i = 0;
+    for(S32 x = 0; x < x_tiles; x++){
+      for(S32 y = 0; y < y_tiles; y++){
+        Rect2 bounding_rect;
+        bounding_rect.min_x = block_size_x * x;
+        bounding_rect.min_y = block_size_y * y;
+        bounding_rect.max_x = bounding_rect.min_x + block_size_x;
+        bounding_rect.max_y = bounding_rect.min_y + block_size_y;
+        tile_job_data[i].region = bounding_rect;
+        tile_job_data[i].r = &r;
+
+        push_work(&r.work_queue, (void *)(tile_job_data + i), draw_tile);
+        i += 1;
+      }
+    }
+
+    wait_until_completion(&r.work_queue);
+    array_free_all_nodes(&r.commands);
+
+
     // @Note: Draw 320screen to OS screen
     U32* ptr = os.screen->pixels;
     for (int y = 0; y < os.screen->y; y++) {
@@ -893,14 +961,18 @@ main(int argc, char **argv) {
       triangle_count = 0;
     }
 
-    if(os.frame % 4 == 0){
+    // @Todo I think there is bug with test_case_number, after doing full round it
+    // skips a phase
+    if(os.frame % 60 == 0){
+      continue;
       render_triangle_test_case_number++;
       if(render_triangle_test_case_number == 6){
         render_triangle_test_case_number = 0;
         try_again: switch(render_triangle_test_case_angle){
           case 0: r.camera_pos = vec3(-228,94.5,-107); r.camera_yaw = vec2(-1.25, 0.21); break;
           case 1: r.camera_pos = vec3(-356,89.5,168); r.camera_yaw = vec2(0.2, 0); break;
-          case 2: render_triangle_test_case_angle = 0; goto try_again; break;
+          case 2: r.camera_pos = vec3(-1020, 687, -85); r.camera_yaw = vec2(-1.3, -0.44); break;
+          case 3: render_triangle_test_case_angle = 0; goto try_again; break;
         }
         render_triangle_test_case_angle += 1;
       }
