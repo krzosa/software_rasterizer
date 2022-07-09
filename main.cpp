@@ -280,7 +280,8 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
 #define F32x8 __m256
 #define S32x8 __m256i
 
-S32 render_triangle_test_case_number;
+S32 render_triangle_test_case_number = 3;
+S32 render_triangle_test_case_angle = 1;
 U64 filled_pixel_count;
 U64 filled_pixel_cycles;
 U64 triangle_count;
@@ -800,9 +801,11 @@ main(int argc, char **argv) {
   r.depth320 = (F32 *)arena_push_size(os.perm_arena, sizeof(F32) * screen_x * screen_y);
 
   String frame_data = {};
+  String raster_details = {};
   UISetup setup[] = {
     UI_SIGNAL("Change scene"_s, scene_callback),
     UI_LABEL(&frame_data),
+    UI_LABEL(&raster_details),
     UI_LABEL(&os.text),
   };
   UI ui = ui_make(setup, buff_cap(setup));
@@ -879,14 +882,29 @@ main(int argc, char **argv) {
     }
 
     ui_end_frame(os.screen, &ui, &font);
-    frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f"
-        "\nCycle per pixel: %llu Cycles:%llu Pixels:%llu Triangles:%llu",
-        os.fps, os.delta_time*1000, os.frame, r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y,
-        filled_pixel_cycles/filled_pixel_count, filled_pixel_cycles, filled_pixel_count, triangle_count);
+    frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f",
+      os.fps, os.delta_time*1000, os.frame, r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y);
+    if(filled_pixel_count){
+      raster_details = string_fmt(os.frame_arena, "\nAngle:%d Case:%d Cycle per pixel: %llu Cycles:%llu Pixels:%llu Triangles:%llu",
+        render_triangle_test_case_angle, render_triangle_test_case_number, filled_pixel_cycles/filled_pixel_count, filled_pixel_cycles, filled_pixel_count, triangle_count);
 
-    filled_pixel_count = 0;
-    filled_pixel_cycles = 0;
-    triangle_count = 0;
+      filled_pixel_count = 0;
+      filled_pixel_cycles = 0;
+      triangle_count = 0;
+    }
+
+    if(os.frame % 4 == 0){
+      render_triangle_test_case_number++;
+      if(render_triangle_test_case_number == 6){
+        render_triangle_test_case_number = 0;
+        try_again: switch(render_triangle_test_case_angle){
+          case 0: r.camera_pos = vec3(-228,94.5,-107); r.camera_yaw = vec2(-1.25, 0.21); break;
+          case 1: r.camera_pos = vec3(-356,89.5,168); r.camera_yaw = vec2(0.2, 0); break;
+          case 2: render_triangle_test_case_angle = 0; goto try_again; break;
+        }
+        render_triangle_test_case_angle += 1;
+      }
+    }
 
   }
 }

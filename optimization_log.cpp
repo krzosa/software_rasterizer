@@ -532,18 +532,27 @@ void draw_triangle_nearest_simd_with_overloads(Bitmap* dst, F32 *depth_buffer, B
         dst_b.simd = {_mm256_sqrt_ps(dst_b.simd)};
       }
 
-      Vec8I result;
-      for(S64 i = 0; i < 8; i++){
-        if (should_fill[i]){
-            U8 red     = (U8)(dst_r[i] * 255);
-            U8 green   = (U8)(dst_g[i] * 255);
-            U8 blue    = (U8)(dst_b[i] * 255);
-            U8 alpha   = (U8)(dst_a[i] * 255);
-            result.e[i] = (U32)(alpha << 24 | blue << 16 | green << 8 | red << 0);
-        }
-      }
+      // Convert to integer format
+      dst_r = dst_r * var255;
+      dst_g = dst_g * var255;
+      dst_b = dst_b * var255;
+      dst_a = dst_a * var255;
 
-      _mm256_maskstore_epi32((int *)dst_memory, should_fill.simd, result.simd);
+      Vec8I dst_r_int = convert_vec8_to_vec8i(dst_r);
+      Vec8I dst_g_int = convert_vec8_to_vec8i(dst_g);
+      Vec8I dst_b_int = convert_vec8_to_vec8i(dst_b);
+      Vec8I dst_a_int = convert_vec8_to_vec8i(dst_a);
+
+      Vec8I dst_int_a_shifted = {_mm256_slli_epi32(dst_a_int.simd, 24)};
+      Vec8I dst_int_b_shifted = {_mm256_slli_epi32(dst_b_int.simd, 16)};
+      Vec8I dst_int_g_shifted = {_mm256_slli_epi32(dst_g_int.simd, 8)};
+      Vec8I dst_int_r_shifted = dst_r_int;
+
+      Vec8I packed_abgr0 = {_mm256_or_si256(dst_int_a_shifted.simd, dst_int_b_shifted.simd)};
+      Vec8I packed_abgr1 = {_mm256_or_si256(packed_abgr0.simd, dst_int_g_shifted.simd)};
+      Vec8I packed_abgr2 = {_mm256_or_si256(packed_abgr1.simd, dst_int_r_shifted.simd)};
+
+      _mm256_maskstore_epi32((int *)dst_memory, should_fill.simd, packed_abgr2.simd);
 
     }
     Cy0 -= dx10;
