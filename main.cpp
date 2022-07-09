@@ -280,6 +280,7 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
 #define F32x8 __m256
 #define S32x8 __m256i
 
+S32 render_triangle_test_case_number;
 U64 filled_pixel_count;
 U64 filled_pixel_cycles;
 U64 triangle_count;
@@ -706,12 +707,30 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
         in[j].pos.y += r->screen320.y / 2;
       }
 
-
       triangle_count++;
-      draw_triangle_nearest_b(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
-      if (in_count > 3) {
-        triangle_count++;
-        draw_triangle_nearest_b(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+      if (in_count > 3) triangle_count++;
+
+      switch(render_triangle_test_case_number){
+        case 0: break;
+        case 1:
+          draw_triangle_nearest_a(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
+          if (in_count > 3) draw_triangle_nearest_a(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+        case 2:
+          draw_triangle_nearest_b(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
+          if (in_count > 3) draw_triangle_nearest_b(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+        break;
+        case 3:
+          draw_triangle_nearest_simd_with_overloads(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
+          if (in_count > 3) draw_triangle_nearest_simd_with_overloads(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+        break;
+        case 4:
+          draw_triangle_nearest_simd_without_overloads(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
+          if (in_count > 3) draw_triangle_nearest_simd_without_overloads(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+        break;
+        case 5:
+          draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
+          if (in_count > 3) draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+        break;
       }
     }
   }

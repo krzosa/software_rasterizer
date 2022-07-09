@@ -6,6 +6,9 @@ void draw_triangle_nearest_a(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
                            Vec4 p0,   Vec4 p1,   Vec4 p2,
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
+  if(src->pixels == 0) return;
+  U64 fill_pixels_begin = __rdtsc();
+
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
   F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
@@ -14,6 +17,11 @@ void draw_triangle_nearest_a(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
   S64 min_y = (S64)max(0.f, floor(min_y1));
   S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
   S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
+
+
+  if (min_y >= max_y) return;
+  if (min_x >= max_x) return;
+
 
   U32 *destination = dst->pixels + dst->x*min_y;
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
@@ -98,8 +106,9 @@ void draw_triangle_nearest_a(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
     }
     destination += dst->x;
   }
+  filled_pixel_cycles += __rdtsc() - fill_pixels_begin;
+  filled_pixel_count  += (max_x - min_x)*(max_y - min_y);
 }
-
 
 function
 void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
@@ -226,9 +235,7 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
     Cy2 -= dx02;
     destination += dst->x;
   }
-  U64 end_time = __rdtsc();
-
-  filled_pixel_cycles += end_time - fill_pixels_begin;
+  filled_pixel_cycles += __rdtsc() - fill_pixels_begin;
   filled_pixel_count  += (max_x - min_x)*(max_y - min_y);
 }
 
@@ -238,6 +245,8 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 li
                             Vec4 p0,   Vec4 p1,   Vec4 p2,
                             Vec2 tex0, Vec2 tex1, Vec2 tex2,
                             Vec3 norm0, Vec3 norm1, Vec3 norm2) {
+  if(src->pixels == 0) return;
+  U64 fill_pixels_begin = __rdtsc();
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
   F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
@@ -247,6 +256,10 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 li
   S64 min_y = (S64)clamp_bot(0.f, floor(min_y1));
   S64 max_x = (S64)clamp_top((F32)dst->x, ceil(max_x1));
   S64 max_y = (S64)clamp_top((F32)dst->y, ceil(max_y1));
+
+  if (min_y >= max_y) return;
+  if (min_x >= max_x) return;
+
 
   F32 area = edge_function(p0, p1, p2);
   for (S64 y = min_y; y < max_y; y++) {
@@ -324,503 +337,17 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 li
       }
     }
   }
+  filled_pixel_cycles += __rdtsc() - fill_pixels_begin;
+  filled_pixel_count  += (max_x - min_x)*(max_y - min_y);
 }
 
 function
-void draw_triangle_nearest_c(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
-                           Vec4 p0,   Vec4 p1,   Vec4 p2,
-                           Vec2 tex0, Vec2 tex1, Vec2 tex2,
-                           Vec3 norm0, Vec3 norm1, Vec3 norm2) {
-  if(src->pixels == 0) return;
-
-  PROFILE_SCOPE(draw_triangle);
-  F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
-  F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
-  F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
-  F32 max_y1 = (F32)(max(p0.y, max(p1.y, p2.y)));
-
-  S64 min_x = (S64)max(0.f, floor(min_x1));
-  S64 min_y = (S64)max(0.f, floor(min_y1));
-  S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
-  S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
-
-  if (min_y >= max_y) return;
-  if (min_x >= max_x) return;
-
-  F32 dy10 = (p1.y - p0.y);
-  F32 dy21 = (p2.y - p1.y);
-  F32 dy02 = (p0.y - p2.y);
-
-  F32 dx10 = (p1.x - p0.x);
-  F32 dx21 = (p2.x - p1.x);
-  F32 dx02 = (p0.x - p2.x);
-
-  F32 C0 = dy10 * (p0.x) - dx10 * (p0.y);
-  F32 C1 = dy21 * (p1.x) - dx21 * (p1.y);
-  F32 C2 = dy02 * (p2.x) - dx02 * (p2.y);
-
-  F32 Cy0 = dy10 * min_x - dx10 * min_y - C0;
-  F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
-  F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
-
-  Vec8 Cx0;
-  Vec8 Cx1;
-  Vec8 Cx2;
-
-  Vec8I var07i = vec8i(0,1,2,3,4,5,6,7);
-  Vec8 var07 = vec8(0,1,2,3,4,5,6,7);
-  Vec8 Dy10 = vec8(dy10) * var07;
-  Vec8 Dy21 = vec8(dy21) * var07;
-  Vec8 Dy02 = vec8(dy02) * var07;
-
-
-  U32 *destination = dst->pixels + dst->x*min_y;
-  F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
-  for (S64 y = min_y; y < max_y; y++) {
-    Cx0 = vec8(Cy0);
-    Cx1 = vec8(Cy1);
-    Cx2 = vec8(Cy2);
-
-    for (S64 x8 = min_x; x8 < max_x; x8+=8) {
-      PROFILE_SCOPE(fill_triangle_outer);
-      Cx0 += Dy10;
-      Cx1 += Dy21;
-      Cx2 += Dy02;
-
-
-      Vec8I x = vec8i(x8) + var07i;
-      for(S64 i = 0; i < 8; i++){
-        // S64 x = x8+i;
-
-        if (Cx0[0] >= 0 && Cx1[0] >= 0 && Cx2[0] >= 0) {
-          PROFILE_SCOPE(fill_triangle_inner);
-          F32 w1 = Cx1[0] / area;
-          F32 w2 = Cx2[0] / area;
-          F32 w3 = Cx0[0] / area;
-
-          // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
-          // but why waste an instruction, the smaller the depth value the farther the object
-          F32 interpolated_w = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
-          F32* depth = depth_buffer + (x[i] + y * dst->x);
-          if (*depth < interpolated_w) {
-            PROFILE_SCOPE(fill_triangle_after_depth_test);
-            *depth = interpolated_w;
-            F32 invw0 = (w1 / p0.w);
-            F32 invw1 = (w2 / p1.w);
-            F32 invw2 = (w3 / p2.w);
-
-            // Vec3 norm = (norm0 * invw0 + norm1 * invw1 + norm2 * invw2) / interpolated_w;
-            F32 u = tex0.x * invw0 + tex1.x * invw1 + tex2.x * invw2;
-            F32 v = tex0.y * invw0 + tex1.y * invw1 + tex2.y * invw2;
-            {
-              u /= interpolated_w;
-              v /= interpolated_w;
-              u = u - floor(u);
-              v = v - floor(v);
-              u = u * (src->x - 1);
-              v = v * (src->y - 1);
-            }
-            S64 ui = (S64)(u);
-            S64 vi = (S64)(v);
-            //F32 udiff = u - (F32)ui;
-            //F32 vdiff = v - (F32)vi;
-            // Origin UV (0,0) is in bottom left
-            U32 *dst_pixel = destination + x[i];
-            U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
-
-            Vec4 result_color; {
-              U32 c = *pixel;
-              F32 a = ((c & 0xff000000) >> 24) / 255.f;
-              F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-              F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-              F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-              r*=r;
-              g*=g;
-              b*=b;
-              result_color = { r,g,b,a };
-            }
-
-            Vec4 dst_color; {
-              U32 c = *dst_pixel;
-              F32 a = ((c & 0xff000000) >> 24) / 255.f;
-              F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-              F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-              F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-              r*=r; g*=g; b*=b;
-              dst_color = { r,g,b,a };
-            }
-
-  #if 0
-            Vec3 light_color = vec3(0.8,0.8,1);
-            constexpr F32 ambient_strength = 0.1f; {
-              Vec3 ambient = ambient_strength * light_color;
-              Vec3 diffuse = clamp_bot(0.f, -dot(norm, light_direction)) * light_color;
-              result_color.rgb *= (ambient+diffuse);
-            }
-  #endif
-
-            result_color = premultiplied_alpha(dst_color, result_color);
-            result_color = almost_linear_to_srgb(result_color);
-            U32 color32 = vec4_to_u32abgr(result_color);
-
-            *dst_pixel = color32;
-          }
-        }
-        Cx0[0] += dy10;
-        Cx1[0] += dy21;
-        Cx2[0] += dy02;
-      }
-
-    }
-    Cy0 -= dx10;
-    Cy1 -= dx21;
-    Cy2 -= dx02;
-    destination += dst->x;
-  }
-}
-
-function
-void draw_triangle_nearest_d_bugged(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
-                           Vec4 p0,   Vec4 p1,   Vec4 p2,
-                           Vec2 tex0, Vec2 tex1, Vec2 tex2,
-                           Vec3 norm0, Vec3 norm1, Vec3 norm2) {
-  if(src->pixels == 0) return;
-
-  PROFILE_SCOPE(draw_triangle);
-  F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
-  F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
-  F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
-  F32 max_y1 = (F32)(max(p0.y, max(p1.y, p2.y)));
-
-  S64 min_x = (S64)max(0.f, floor(min_x1));
-  S64 min_y = (S64)max(0.f, floor(min_y1));
-  S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
-  S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
-
-  if (min_y >= max_y) return;
-  if (min_x >= max_x) return;
-
-  F32 dy10 = (p1.y - p0.y);
-  F32 dy21 = (p2.y - p1.y);
-  F32 dy02 = (p0.y - p2.y);
-
-  F32 dx10 = (p1.x - p0.x);
-  F32 dx21 = (p2.x - p1.x);
-  F32 dx02 = (p0.x - p2.x);
-
-  F32 C0 = dy10 * (p0.x) - dx10 * (p0.y);
-  F32 C1 = dy21 * (p1.x) - dx21 * (p1.y);
-  F32 C2 = dy02 * (p2.x) - dx02 * (p2.y);
-
-  F32 Cy0 = dy10 * min_x - dx10 * min_y - C0;
-  F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
-  F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
-
-  Vec8 zero8 = vec8(0);
-  // Vec8I var07i = vec8i(0,1,2,3,4,5,6,7);
-  Vec8 var07 = vec8(0,1,2,3,4,5,6,7);
-  Vec8 var1_8 = vec8(1,2,3,4,5,6,7,8);
-  Vec8 Dy10 = vec8(dy10) * var1_8;
-  Vec8 Dy21 = vec8(dy21) * var1_8;
-  Vec8 Dy02 = vec8(dy02) * var1_8;
-  Vec8 w0, w1, w2, invw0, invw1, invw2, u, v, interpolated_w;
-  Vec8I ui, vi;
-
-  U32 *destination = dst->pixels + dst->x*min_y;
-  F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
-  Vec8 area8 = vec8(area);
-  for (S64 y = min_y; y < max_y; y++) {
-    Vec8 Cx0 = vec8(Cy0);
-    Vec8 Cx1 = vec8(Cy1);
-    Vec8 Cx2 = vec8(Cy2);
-
-    for (S64 x8 = min_x; x8 < max_x; x8+=8) {
-      PROFILE_SCOPE(fill_triangle_outer);
-      Cx0 = vec8(Cx0[7]) + Dy10;
-      Cx1 = vec8(Cx1[7]) + Dy21;
-      Cx2 = vec8(Cx2[7]) + Dy02;
-
-
-
-      Vec8 should_fill;
-      {
-        Vec8 a = (vec8(x8) + var07);
-        Vec8 b = vec8(max_x);
-        should_fill = a < b;
-        should_fill = should_fill & (Cx0 >= zero8 & Cx1 >= zero8 & Cx2 >= zero8);
-      }
-
-      w0 = Cx1 / area8;
-      w1 = Cx2 / area8;
-      w2 = Cx0 / area8;
-
-      // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
-      // but why waste an instruction, the smaller the depth value the farther the object
-      interpolated_w = vec8(1.f / p0.w) * w0 + vec8(1.f / p1.w) * w1 + vec8(1.f / p2.w) * w2;
-
-      F32 *depth_pointer = (depth_buffer + (x8 + y * dst->x));
-      Vec8 depth = loadu8(depth_pointer);
-      should_fill = should_fill & (depth < interpolated_w);
-
-
-      invw0 = (w0 / vec8(p0.w));
-      invw1 = (w1 / vec8(p1.w));
-      invw2 = (w2 / vec8(p2.w));
-
-      u = vec8(tex0.x) * invw0 + vec8(tex1.x) * invw1 + vec8(tex2.x) * invw2;
-      v = vec8(tex0.y) * invw0 + vec8(tex1.y) * invw1 + vec8(tex2.y) * invw2;
-      u /= interpolated_w;
-      v /= interpolated_w;
-      u = u - floor8(u);
-      v = v - floor8(v);
-      u = u * vec8(src->x - 1);
-      v = v * vec8(src->y - 1);
-      ui = convert_vec8_to_vec8i(u);
-      vi = convert_vec8_to_vec8i(v);
-
-      // Origin UV (0,0) is in bottom left
-      _mm256_maskstore_epi32((int *)depth_pointer, should_fill.simd, interpolated_w.simd);
-      Vec8I indices = ui + ((vec8i(src->y) - vec8i(1) - vi) * vec8i(src->x));
-      U32 *pixel[8] = {
-        src->pixels + indices.e[0],
-        src->pixels + indices.e[1],
-        src->pixels + indices.e[2],
-        src->pixels + indices.e[3],
-        src->pixels + indices.e[4],
-        src->pixels + indices.e[5],
-        src->pixels + indices.e[6],
-        src->pixels + indices.e[7],
-      };
-
-      U32 *dst_pixel = destination + x8;
-      for(S64 i = 0; i < 8; i++){
-        if (should_fill[i]){
-          PROFILE_SCOPE(fill_triangle_after_depth_test);
-
-          Vec4 result_color; {
-            U32 c = *pixel[i];
-            F32 a = ((c & 0xff000000) >> 24) / 255.f;
-            F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-            F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-            F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-            r*=r;
-            g*=g;
-            b*=b;
-            result_color = { r,g,b,a };
-          }
-
-          Vec4 dst_color; {
-            U32 c = dst_pixel[i];
-            F32 a = ((c & 0xff000000) >> 24) / 255.f;
-            F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-            F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-            F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-            r*=r; g*=g; b*=b;
-            dst_color = { r,g,b,a };
-          }
-
-#if 0
-          Vec3 light_color = vec3(0.8,0.8,1);
-          constexpr F32 ambient_strength = 0.1f; {
-            Vec3 ambient = ambient_strength * light_color;
-            Vec3 diffuse = clamp_bot(0.f, -dot(norm, light_direction)) * light_color;
-            result_color.rgb *= (ambient+diffuse);
-          }
-#endif
-
-          // Premultiplied alpha
-          {
-            result_color.r = result_color.r + ((1-result_color.a) * dst_color.r);
-            result_color.g = result_color.g + ((1-result_color.a) * dst_color.g);
-            result_color.b = result_color.b + ((1-result_color.a) * dst_color.b);
-            result_color.a = result_color.a + dst_color.a - result_color.a*dst_color.a;
-          }
-
-          // Almost linear to srgb
-          {
-            result_color.r = sqrtf(result_color.r);
-            result_color.g = sqrtf(result_color.g);
-            result_color.b = sqrtf(result_color.b);
-          }
-
-          U32 color32;
-          {
-            U8 red     = (U8)(result_color.r * 255);
-            U8 green   = (U8)(result_color.g * 255);
-            U8 blue    = (U8)(result_color.b * 255);
-            U8 alpha   = (U8)(result_color.a * 255);
-            color32 = (U32)(alpha << 24 | blue << 16 | green << 8 | red << 0);
-          }
-
-          dst_pixel[i] = color32;
-        }
-      }
-
-    }
-    Cy0 -= dx10;
-    Cy1 -= dx21;
-    Cy2 -= dx02;
-    destination += dst->x;
-  }
-}
-
-
-function
-void draw_triangle_nearest_e(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
-                           Vec4 p0,   Vec4 p1,   Vec4 p2,
-                           Vec2 tex0, Vec2 tex1, Vec2 tex2,
-                           Vec3 norm0, Vec3 norm1, Vec3 norm2) {
-  if(src->pixels == 0) return;
-
-  PROFILE_SCOPE(draw_triangle);
-  F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
-  F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
-  F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
-  F32 max_y1 = (F32)(max(p0.y, max(p1.y, p2.y)));
-
-  S64 min_x = (S64)max(0.f, floor(min_x1));
-  S64 min_y = (S64)max(0.f, floor(min_y1));
-  S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
-  S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
-
-  if (min_y >= max_y) return;
-  if (min_x >= max_x) return;
-
-  F32 dy10 = (p1.y - p0.y);
-  F32 dy21 = (p2.y - p1.y);
-  F32 dy02 = (p0.y - p2.y);
-
-  F32 dx10 = (p1.x - p0.x);
-  F32 dx21 = (p2.x - p1.x);
-  F32 dx02 = (p0.x - p2.x);
-
-  F32 C0 = dy10 * (p0.x) - dx10 * (p0.y);
-  F32 C1 = dy21 * (p1.x) - dx21 * (p1.y);
-  F32 C2 = dy02 * (p2.x) - dx02 * (p2.y);
-
-  F32 Cy0 = dy10 * min_x - dx10 * min_y - C0;
-  F32 Cy1 = dy21 * min_x - dx21 * min_y - C1;
-  F32 Cy2 = dy02 * min_x - dx02 * min_y - C2;
-
-  Vec8I var07i = vec8i(0,1,2,3,4,5,6,7);
-  Vec8 var07 = vec8(0,1,2,3,4,5,6,7);
-  Vec8 var1_8 = vec8(1,2,3,4,5,6,7,8);
-  Vec8 Dy10 = vec8(dy10) * var07;
-  Vec8 Dy21 = vec8(dy21) * var07;
-  Vec8 Dy02 = vec8(dy02) * var07;
-
-
-  U32 *destination = dst->pixels + dst->x*min_y;
-  F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
-  for (S64 y = min_y; y < max_y; y++) {
-    Vec8 Cx0 = vec8(Cy0);
-    Vec8 Cx1 = vec8(Cy1);
-    Vec8 Cx2 = vec8(Cy2);
-
-    for (S64 x8 = min_x; x8 < max_x; x8+=8) {
-      PROFILE_SCOPE(fill_triangle_outer);
-      Cx0 = vec8(Cx0[7]) + Dy10*var1_8;
-      Cx1 = vec8(Cx1[7]) + Dy21*var1_8;
-      Cx2 = vec8(Cx2[7]) + Dy02*var1_8;
-
-      Vec8I x = vec8i(x8) + var07i;
-      for(S64 i = 0; i < 8; i++){
-        // S64 x = x8+i;
-
-        if (Cx0[i] >= 0 && Cx1[i] >= 0 && Cx2[i] >= 0) {
-          PROFILE_SCOPE(fill_triangle_inner);
-          F32 w1 = Cx1[i] / area;
-          F32 w2 = Cx2[i] / area;
-          F32 w3 = Cx0[i] / area;
-
-          // @Note: We could do: interpolated_w = 1.f / interpolated_w to get proper depth
-          // but why waste an instruction, the smaller the depth value the farther the object
-          F32 interpolated_w = (1.f / p0.w) * w1 + (1.f / p1.w) * w2 + (1.f / p2.w) * w3;
-          F32* depth = depth_buffer + (x[i] + y * dst->x);
-          if (*depth < interpolated_w) {
-            PROFILE_SCOPE(fill_triangle_after_depth_test);
-            *depth = interpolated_w;
-            F32 invw0 = (w1 / p0.w);
-            F32 invw1 = (w2 / p1.w);
-            F32 invw2 = (w3 / p2.w);
-
-            // Vec3 norm = (norm0 * invw0 + norm1 * invw1 + norm2 * invw2) / interpolated_w;
-            F32 u = tex0.x * invw0 + tex1.x * invw1 + tex2.x * invw2;
-            F32 v = tex0.y * invw0 + tex1.y * invw1 + tex2.y * invw2;
-            {
-              u /= interpolated_w;
-              v /= interpolated_w;
-              u = u - floor(u);
-              v = v - floor(v);
-              u = u * (src->x - 1);
-              v = v * (src->y - 1);
-            }
-            S64 ui = (S64)(u);
-            S64 vi = (S64)(v);
-            //F32 udiff = u - (F32)ui;
-            //F32 vdiff = v - (F32)vi;
-            // Origin UV (0,0) is in bottom left
-            U32 *dst_pixel = destination + x[i];
-            U32 *pixel = src->pixels + (ui + (src->y - 1ll - vi) * src->x);
-
-            Vec4 result_color; {
-              U32 c = *pixel;
-              F32 a = ((c & 0xff000000) >> 24) / 255.f;
-              F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-              F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-              F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-              r*=r;
-              g*=g;
-              b*=b;
-              result_color = { r,g,b,a };
-            }
-
-            Vec4 dst_color; {
-              U32 c = *dst_pixel;
-              F32 a = ((c & 0xff000000) >> 24) / 255.f;
-              F32 b = ((c & 0x00ff0000) >> 16) / 255.f;
-              F32 g = ((c & 0x0000ff00) >> 8)  / 255.f;
-              F32 r = ((c & 0x000000ff) >> 0)  / 255.f;
-              r*=r; g*=g; b*=b;
-              dst_color = { r,g,b,a };
-            }
-
-  #if 0
-            Vec3 light_color = vec3(0.8,0.8,1);
-            constexpr F32 ambient_strength = 0.1f; {
-              Vec3 ambient = ambient_strength * light_color;
-              Vec3 diffuse = clamp_bot(0.f, -dot(norm, light_direction)) * light_color;
-              result_color.rgb *= (ambient+diffuse);
-            }
-  #endif
-
-            result_color = premultiplied_alpha(dst_color, result_color);
-            result_color = almost_linear_to_srgb(result_color);
-            U32 color32 = vec4_to_u32abgr(result_color);
-
-            *dst_pixel = color32;
-          }
-        }
-      }
-
-    }
-    Cy0 -= dx10;
-    Cy1 -= dx21;
-    Cy2 -= dx02;
-    destination += dst->x;
-  }
-}
-
-
-function
-void draw_triangle_nearest_f(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
+void draw_triangle_nearest_simd_with_overloads(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
                            Vec4 p0,   Vec4 p1,   Vec4 p2,
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
   U64 fill_pixels_begin = __rdtsc();
-
-  PROFILE_SCOPE(draw_triangle);
 
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
@@ -1024,14 +551,12 @@ void draw_triangle_nearest_f(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
     Cy2 -= dx02;
     destination += dst->x;
   }
-  U64 end_time = __rdtsc();
-
-  filled_pixel_cycles += end_time - fill_pixels_begin;
-  filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
+  filled_pixel_cycles += __rdtsc() - fill_pixels_begin;
+  filled_pixel_count  += (max_x - min_x)*(max_y - min_y);
 }
 
 function
-void draw_triangle_nearest_g(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
+void draw_triangle_nearest_simd_without_overloads(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 light_direction,
                            Vec4 p0,   Vec4 p1,   Vec4 p2,
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
