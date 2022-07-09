@@ -80,9 +80,9 @@
 
 // #include "obj_dump.cpp"
 #include "multimedia.cpp"
-#include "profile.cpp"
 #include "obj.cpp"
 #include "vec.cpp"
+#define PROFILE_SCOPE(x)
 
 struct Vertex {
   Vec3 pos;
@@ -281,7 +281,8 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
 #define S32x8 __m256i
 
 U64 filled_pixel_count;
-U64 filled_pixel_total_time;
+U64 filled_pixel_cycles;
+U64 triangle_count;
 #include "optimization_log.cpp"
 
 function
@@ -291,7 +292,7 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
 
-  PROFILE_SCOPE(draw_triangle);
+  U64 fill_pixels_begin = __rdtsc();
 
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
@@ -362,7 +363,6 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
   F32x8 p2_x = _mm256_set1_ps(p2.x);
   F32x8 p2_y = _mm256_set1_ps(p2.y);
 
-  U64 fill_pixels_begin = __rdtsc();
   for (S64 y = min_y; y < max_y; y++) {
     F32x8 Y = _mm256_set1_ps(y);
     for (S64 x8 = min_x; x8 < max_x; x8+=8) {
@@ -562,10 +562,9 @@ void draw_triangle_nearest(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 lig
     }
     destination += dst->x;
   }
-  U64 end_time = __rdtsc();
 
-  filled_pixel_total_time += end_time - fill_pixels_begin;
-  filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
+  filled_pixel_cycles += __rdtsc() - fill_pixels_begin;
+  filled_pixel_count  += (max_x - min_x)*(max_y - min_y);
 }
 
 function
@@ -708,9 +707,11 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
       }
 
 
-      draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
+      triangle_count++;
+      draw_triangle_nearest_b(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
       if (in_count > 3) {
-        draw_triangle_nearest(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+        triangle_count++;
+        draw_triangle_nearest_b(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
       }
     }
   }
@@ -1106,7 +1107,6 @@ main(int argc, char **argv) {
   thread_ctx.log_proc = windows_log;
   fprintf(global_file, "\n---------------------");
 
-
   os.window_size.x = 1280;
   os.window_size.y = 720;
   os.window_resizable = 1;
@@ -1209,23 +1209,14 @@ main(int argc, char **argv) {
 
     ui_end_frame(os.screen, &ui, &font);
     frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f"
-        "\nAvg_Time: %llu Time:%llu Count:%llu",
+        "\nCycle per pixel: %llu Cycles:%llu Pixels:%llu Triangles:%llu",
         os.fps, os.delta_time*1000, os.frame, r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y,
-        filled_pixel_total_time/filled_pixel_count, filled_pixel_total_time, filled_pixel_count);
+        filled_pixel_cycles/filled_pixel_count, filled_pixel_cycles, filled_pixel_count, triangle_count);
 
+    filled_pixel_count = 0;
+    filled_pixel_cycles = 0;
+    triangle_count = 0;
 
-    for(int i = 0; i < ProfileScopeName_Count; i++){
-      auto *scope = &profile_scopes[i];
-      if(scope->i == 0) continue;
-
-      U64 total = 0;
-      for(int i = 0; i < scope->i; i++){
-        total += scope->samples[i];
-      }
-
-      log_info("\n%s :: Total: %llu Hits: %llu, Avg: %llu", profile_scope_names[i], total, (U64)scope->i, total / scope->i);
-      scope->i = 0;
-    }
   }
 }
 

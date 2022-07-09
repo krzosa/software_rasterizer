@@ -106,8 +106,9 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
                            Vec4 p0,   Vec4 p1,   Vec4 p2,
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
-  // if(os.frame > 10) PROFILE_BEGIN(draw_triangle);
-  // ZoneScopedN("draw_triangle");
+  if(src->pixels == 0) return;
+  U64 fill_pixels_begin = __rdtsc();
+
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
   F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
@@ -116,6 +117,9 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
   S64 min_y = (S64)max(0.f, floor(min_y1));
   S64 max_x = (S64)min((F32)dst->x, ceil(max_x1));
   S64 max_y = (S64)min((F32)dst->y, ceil(max_y1));
+
+  if (min_y >= max_y) return;
+  if (min_x >= max_x) return;
 
   F32 dy10 = (p1.y - p0.y);
   F32 dy21 = (p2.y - p1.y);
@@ -135,7 +139,6 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
 
   U32 *destination = dst->pixels + dst->x*min_y;
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
-  U64 fill_pixels_begin = __rdtsc();
   for (S64 y = min_y; y < max_y; y++) {
     F32 Cx0 = Cy0;
     F32 Cx1 = Cy1;
@@ -223,12 +226,10 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
     Cy2 -= dx02;
     destination += dst->x;
   }
+  U64 end_time = __rdtsc();
 
-U64 end_time = __rdtsc();
-
-  filled_pixel_total_time += end_time - fill_pixels_begin;
-  filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
-     // if(os.frame > 10) PROFILE_END(draw_triangle);
+  filled_pixel_cycles += end_time - fill_pixels_begin;
+  filled_pixel_count  += (max_x - min_x)*(max_y - min_y);
 }
 
 
@@ -817,6 +818,7 @@ void draw_triangle_nearest_f(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
+  U64 fill_pixels_begin = __rdtsc();
 
   PROFILE_SCOPE(draw_triangle);
 
@@ -869,7 +871,6 @@ void draw_triangle_nearest_f(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   Vec8 area8 = vec8(area);
 
-  U64 fill_pixels_begin = __rdtsc();
   for (S64 y = min_y; y < max_y; y++) {
     Vec8 Cx0 = vec8(Cy0);
     Vec8 Cx1 = vec8(Cy1);
@@ -1025,7 +1026,7 @@ void draw_triangle_nearest_f(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
   }
   U64 end_time = __rdtsc();
 
-  filled_pixel_total_time += end_time - fill_pixels_begin;
+  filled_pixel_cycles += end_time - fill_pixels_begin;
   filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
 }
 
@@ -1035,6 +1036,7 @@ void draw_triangle_nearest_g(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
+  U64 fill_pixels_begin = __rdtsc();
 
   PROFILE_SCOPE(draw_triangle);
 
@@ -1109,7 +1111,6 @@ void draw_triangle_nearest_g(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
   F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
   F32x8 area8 = _mm256_set1_ps(area);
 
-  U64 fill_pixels_begin = __rdtsc();
   for (S64 y = min_y; y < max_y; y++) {
     F32x8 Cx0 = _mm256_set1_ps(Cy0);
     F32x8 Cx1 = _mm256_set1_ps(Cy1);
@@ -1311,8 +1312,6 @@ void draw_triangle_nearest_g(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
     Cy2 -= dx02;
     destination += dst->x;
   }
-  U64 end_time = __rdtsc();
-
-  filled_pixel_total_time += end_time - fill_pixels_begin;
+  filled_pixel_cycles += __rdtsc() - fill_pixels_begin;
   filled_pixel_count      += (max_x - min_x)*(max_y - min_y);
 }
