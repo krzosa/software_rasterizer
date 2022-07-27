@@ -1,6 +1,8 @@
 
 # Realtime Software Renderer
 
+Optimized realtime software renderer. I tried to optimize it so that it can render Sponza Palace at 30fps on my machine. It uses multithreading and vector/SIMD instructions.
+
 ![screenshot1](assets/Screenshot1.png)
 ![screenshot2](assets/Screenshot2.png)
 
@@ -20,7 +22,7 @@ The inner loop of the rasterization is fully vectorized using AVX, AVX2 and FMA 
 
 ## Multithreading
 
-Rendered image is split to tiles, each thread gets one tile to render. To synchronize work between threads a simple work queue is implemented. It only uses atomic operations and semaphores to distribute work. Work queue is implemented in one producer, multiple consumers architecture. 
+Rendered image is split to tiles, each thread gets one tile to render. To synchronize work between threads a simple work queue is implemented. It only uses atomic operations and semaphores to distribute work. Work queue is implemented in one producer, multiple consumers architecture.
 
 ## Clipping
 
@@ -39,6 +41,12 @@ either one or two new triangles get derived from the old one.
 Last clipping stage is performed in the 2D image space. Every triangle has a corresponding AABB
 box. In this box every pixel gets tested to see if it's in the triangle. In this clipping stage
 the box is clipped to the image metrics - 0, 0, width, height.
+
+## Building
+
+1. Download Visual Studio and Clang
+1. Run build.bat
+1. Executable requires a specific Sponza obj + textures and it's not bundled with the repository, it's too big(500mb), repository is only for showcase, if someone actually wants to run this you can PM me but I doubt that anyone would want to run this...
 
 ### Things to do:
 
@@ -79,6 +87,7 @@ the box is clipped to the image metrics - 0, 0, width, height.
     - [x] Simple test z clipping
     - [x] Maybe should clip a triangle on znear zfar plane?
     - [x] Maybe should clip out triangles that are fully z out before draw_triangle
+- [ ] Proper infrustructure for transparent textures - sorting before rendering
 - [ ] Effects!!!
   - [ ] Outlines
 - [ ] Lightning
