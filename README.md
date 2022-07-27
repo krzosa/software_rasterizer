@@ -4,6 +4,23 @@
 ![screenshot1](assets/Screenshot1.png)
 ![screenshot2](assets/Screenshot2.png)
 
+## Rasterization
+
+Algorithm used is from the article "A Parallel Algorithm for Polygon Rasterization" by Juan Pineda. First a bounding box of a triangle is calculated.  Every pixel of that triangle is checked using the edge function from the paper to figure out if it belongs to the triangle. Other then that during rasterization also these things happen:
+
+* Clipping
+* Texture mapping
+* Depth buffer, near objects occlude far objects
+* Transparency using premultiplied alpha
+* Gamma correct interpolation of colors
+
+## SIMD
+
+The inner loop of the rasterization is fully vectorized using AVX, AVX2 and FMA intrinsics. The general simd strategy is that 8 pixels are processed at the time. On every iteration, bitmap format is converted to the format for simd computation. SIMD format groups every color channel into separate registers. Then for example all compuation is done on a vector of 8 reds.
+
+## Multithreading
+
+Rendered image is split to tiles, each thread gets one tile to render. To synchronize work between threads a simple work queue is implemented. It only uses atomic operations and semaphores to distribute work. Work queue is implemented in one producer, multiple consumers architecture. 
 
 ## Clipping
 
