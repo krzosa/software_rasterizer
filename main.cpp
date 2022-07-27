@@ -78,12 +78,13 @@
 ///    - [x] Simple scatter plot
 /// - [x] Asset processor as second program
 
-// #include "obj_dump.cpp"
-#include "multimedia.cpp"
-#include "obj.cpp"
+#include "obj_dump.cpp"
+// #include "multimedia.cpp"
+// #include "obj.cpp"
 #include "vec.cpp"
 #include "work_queue.cpp"
 #define PROFILE_SCOPE(x)
+#define MULTITHREADING 1
 
 struct Vertex {
   Vec3 pos;
@@ -296,7 +297,7 @@ F32 edge_function(Vec4 vecp0, Vec4 vecp1, Vec4 p) {
 #define S32x8 __m256i
 
 S32 render_triangle_test_case_number = 5;
-S32 render_triangle_test_case_angle = 1;
+S32 render_triangle_test_case_angle = -1;
 U64 filled_pixel_count;
 U64 filled_pixel_cycles;
 U64 triangle_count;
@@ -635,7 +636,7 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
     Vec3 p0_to_p1 = vert[1].pos - vert[0].pos;
     Vec3 p0_to_p2 = vert[2].pos - vert[0].pos;
     Vec3 normal = normalize(cross(p0_to_p1, p0_to_p2));
-    // Vec3 light_direction =  mat4_rotation_x(light_rotation) * vec3(0, 0, 1);
+    Vec3 light_direction =  mat4_rotation_x(light_rotation) * vec3(0, 0, 1);
 
     if (dot(normal, p0_to_camera) > 0) { //@Note: Backface culling
       /// ## Clipping
@@ -731,6 +732,7 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
       triangle_count++;
       if (in_count > 3) triangle_count++;
 
+#if MULTITHREADING
       Render_Command *command = array_alloc(os.perm_arena, &r->commands);
       command->src = image;
       command->p0 = in[0].pos;
@@ -750,12 +752,12 @@ void draw_mesh(Render *r, String scene_name, Obj_Material *materials, Obj_Mesh *
         command->tex2 = in[3].tex;
       }
 
-#if 0
+#else
       switch(render_triangle_test_case_number){
-        case 0: break;
         case 1:
           draw_triangle_nearest_a(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
           if (in_count > 3) draw_triangle_nearest_a(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
+        break;
         case 2:
           draw_triangle_nearest_b(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[1].pos, in[2].pos, in[0].tex, in[1].tex, in[2].tex, in[0].norm, in[1].norm, in[2].norm);
           if (in_count > 3) draw_triangle_nearest_b(&r->screen320, r->depth320, image, light_direction, in[0].pos, in[2].pos, in[3].pos, in[0].tex, in[2].tex, in[3].tex, in[0].norm, in[2].norm, in[3].norm);
@@ -797,8 +799,7 @@ UI_SIGNAL_CALLBACK(scene_callback) {
     } break;
     case Scene_Sponza: {
       speed = 100;
-      r.camera_pos = vec3(-228,94.5,-107);
-      r.camera_yaw = vec2(-1.25, 0.21);
+      r.camera_pos = vec3(-1020, 687, -85); r.camera_yaw = vec2(-1.3, -0.44);
       obj = sponza;
     } break;
     case Scene_Count:
@@ -810,36 +811,49 @@ UI_SIGNAL_CALLBACK(scene_callback) {
 FILE *global_file;
 function void
 windows_log(Log_Kind kind, String string, char *file, int line){
-  // fprintf(global_file, "%s", string.str);
+  fprintf(global_file, "%s", string.str);
   // OutputDebugStringA((const char *)string.str);
+}
+
+function void
+next_test_case(B32 first_time){
+  render_triangle_test_case_number += 1;
+  if(first_time || render_triangle_test_case_number == 6){
+    render_triangle_test_case_angle += 1;
+    render_triangle_test_case_number = 1;
+    try_again: switch(render_triangle_test_case_angle){
+      case 0: r.camera_pos = vec3(-1020, 687, -85); r.camera_yaw = vec2(-1.3, -0.44); break;
+      case 1: r.camera_pos = vec3(-356,89.5,168); r.camera_yaw = vec2(0.2, 0); break;
+      case 2: render_triangle_test_case_angle = 0; goto try_again; break;
+    }
+  }
 }
 
 int
 main(int argc, char **argv) {
   global_file = fopen("perfclocks.txt", "a");
   thread_ctx.log_proc = windows_log;
-  fprintf(global_file, "\n---------------------");
 
   os.window_size.x = 1920;
   os.window_size.y = 1080;
   os.window_resizable = 1;
   assert(os_init());
   Font font = os_load_font(os.perm_arena, 12*os.dpi_scale, "Arial", 0);
-  test_array_list();
+  // test_array_list();
 
-  f22 = load_obj_dump(os.perm_arena, "plane.bin"_s);
-  sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);
-   // Obj sponza_obj = load_obj(&os_process_heap, "assets/sponza/sponza.obj"_s);
-  // sponza = &sponza_obj;
+  // f22 = load_obj_dump(os.perm_arena, "plane.bin"_s);
+  // sponza = load_obj_dump(os.perm_arena, "sponza.bin"_s);
+   Obj sponza_obj = load_obj(&os_process_heap, "assets/sponza/sponza.obj"_s);
+  sponza = &sponza_obj;
   scene_callback();
+  next_test_case(true);
 
   int screen_x = os.window_size.x;
   int screen_y = os.window_size.y;
 
-  r.camera_pos = vec3(-228,94.5,-107);
-  r.camera_yaw = vec2(-1.25, 0.21);
   r.screen320 = {(U32 *)arena_push_size(os.perm_arena, screen_x*screen_y*sizeof(U32)), screen_x, screen_y};
   r.depth320 = (F32 *)arena_push_size(os.perm_arena, sizeof(F32) * screen_x * screen_y);
+  r.commands.block_size = 1024*1024;
   ThreadStartupInfo thread_infos[16] = {};
   init_work_queue(&r.work_queue, buff_cap(thread_infos), thread_infos);
 
@@ -911,8 +925,8 @@ main(int argc, char **argv) {
       draw_mesh(&r, obj->name, obj->materials.data, mesh+i, vertices, tex_coords, normals);
     }
 
-
-    Render_Tile_Job_Data tile_job_data[16];
+#if MULTITHREADING
+    Render_Tile_Job_Data tile_job_data[32];
     S32 x_tiles = 1;
     S32 y_tiles = 16;
     F32 block_size_x = r.screen320.x / x_tiles;
@@ -935,7 +949,7 @@ main(int argc, char **argv) {
 
     wait_until_completion(&r.work_queue);
     array_free_all_nodes(&r.commands);
-
+#endif
 
     // @Note: Draw 320screen to OS screen
     U32* ptr = os.screen->pixels;
@@ -952,30 +966,23 @@ main(int argc, char **argv) {
     ui_end_frame(os.screen, &ui, &font);
     frame_data = string_fmt(os.frame_arena, "FPS:%f dt:%f frame:%u camera_pos: %f %f %f camera_yaw: %f %f",
       os.fps, os.delta_time*1000, os.frame, r.camera_pos.x, r.camera_pos.y, r.camera_pos.z, r.camera_yaw.x, r.camera_yaw.y);
-    if(filled_pixel_count){
-      raster_details = string_fmt(os.frame_arena, "\nAngle:%d Case:%d Cycle per pixel: %llu Cycles:%llu Pixels:%llu Triangles:%llu",
-        render_triangle_test_case_angle, render_triangle_test_case_number, filled_pixel_cycles/filled_pixel_count, filled_pixel_cycles, filled_pixel_count, triangle_count);
+#if MULTITHREADING
+    if(os.frame == 1) log_info("Angle;Frame_Time\n");
+    log_info("%d;%f\n", render_triangle_test_case_angle, os.delta_time*1000);
+#else
+    if(os.frame == 1) log_info("Angle;Algorithm;Frame_Time;Cycles_Per_Pixel;Cycles_To_Process_Triangles;Pixels_Processed;Triangles\n");
+    log_info("%d;%d;%f;%llu;%llu;%llu;%llu\n", render_triangle_test_case_angle, render_triangle_test_case_number,
+      os.delta_time*1000, filled_pixel_cycles/filled_pixel_count, filled_pixel_cycles, filled_pixel_count, triangle_count);
+#endif
 
-      filled_pixel_count = 0;
-      filled_pixel_cycles = 0;
-      triangle_count = 0;
-    }
+    filled_pixel_count = 0;
+    filled_pixel_cycles = 0;
+    triangle_count = 0;
 
     // @Todo I think there is bug with test_case_number, after doing full round it
     // skips a phase
-    if(os.frame % 60 == 0){
-      continue;
-      render_triangle_test_case_number++;
-      if(render_triangle_test_case_number == 6){
-        render_triangle_test_case_number = 0;
-        try_again: switch(render_triangle_test_case_angle){
-          case 0: r.camera_pos = vec3(-228,94.5,-107); r.camera_yaw = vec2(-1.25, 0.21); break;
-          case 1: r.camera_pos = vec3(-356,89.5,168); r.camera_yaw = vec2(0.2, 0); break;
-          case 2: r.camera_pos = vec3(-1020, 687, -85); r.camera_yaw = vec2(-1.3, -0.44); break;
-          case 3: render_triangle_test_case_angle = 0; goto try_again; break;
-        }
-        render_triangle_test_case_angle += 1;
-      }
+    if(os.frame % 15 == 0){
+      next_test_case(false);
     }
 
   }

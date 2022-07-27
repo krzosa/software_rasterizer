@@ -7,7 +7,6 @@ void draw_triangle_nearest_a(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
-  U64 fill_pixels_begin = __rdtsc();
 
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
@@ -22,9 +21,10 @@ void draw_triangle_nearest_a(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
   if (min_y >= max_y) return;
   if (min_x >= max_x) return;
 
+  U64 fill_pixels_begin = __rdtsc();
 
   U32 *destination = dst->pixels + dst->x*min_y;
-  F32 area = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
+  F32 area = edge_function(p0, p1, p2);
   for (S64 y = min_y; y < max_y; y++) {
     for (S64 x = min_x; x < max_x; x++) {
       F32 Cx0 = edge_function(p0, p1, { (F32)x,(F32)y });
@@ -116,7 +116,6 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
-  U64 fill_pixels_begin = __rdtsc();
 
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
@@ -129,6 +128,7 @@ void draw_triangle_nearest_b(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 l
 
   if (min_y >= max_y) return;
   if (min_x >= max_x) return;
+  U64 fill_pixels_begin = __rdtsc();
 
   F32 dy10 = (p1.y - p0.y);
   F32 dy21 = (p2.y - p1.y);
@@ -246,7 +246,6 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 li
                             Vec2 tex0, Vec2 tex1, Vec2 tex2,
                             Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
-  U64 fill_pixels_begin = __rdtsc();
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
   F32 max_x1 = (F32)(max(p0.x, max(p1.x, p2.x)));
@@ -260,6 +259,7 @@ void draw_triangle_bilinear(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Vec3 li
   if (min_y >= max_y) return;
   if (min_x >= max_x) return;
 
+  U64 fill_pixels_begin = __rdtsc();
 
   F32 area = edge_function(p0, p1, p2);
   for (S64 y = min_y; y < max_y; y++) {
@@ -347,7 +347,6 @@ void draw_triangle_nearest_simd_with_overloads(Bitmap* dst, F32 *depth_buffer, B
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
-  U64 fill_pixels_begin = __rdtsc();
 
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
@@ -362,6 +361,7 @@ void draw_triangle_nearest_simd_with_overloads(Bitmap* dst, F32 *depth_buffer, B
   if (min_y >= max_y) return;
   if (min_x >= max_x) return;
 
+  U64 fill_pixels_begin = __rdtsc();
   F32 dy10 = (p1.y - p0.y);
   F32 dy21 = (p2.y - p1.y);
   F32 dy02 = (p0.y - p2.y);
@@ -570,9 +570,6 @@ void draw_triangle_nearest_simd_without_overloads(Bitmap* dst, F32 *depth_buffer
                            Vec2 tex0, Vec2 tex1, Vec2 tex2,
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
-  U64 fill_pixels_begin = __rdtsc();
-
-  PROFILE_SCOPE(draw_triangle);
 
   F32 min_x1 = (F32)(min(p0.x, min(p1.x, p2.x)));
   F32 min_y1 = (F32)(min(p0.y, min(p1.y, p2.y)));
@@ -587,6 +584,7 @@ void draw_triangle_nearest_simd_without_overloads(Bitmap* dst, F32 *depth_buffer
   if (min_y >= max_y) return;
   if (min_x >= max_x) return;
 
+  U64 fill_pixels_begin = __rdtsc();
   F32 dy10 = (p1.y - p0.y);
   F32 dy21 = (p2.y - p1.y);
   F32 dy02 = (p0.y - p2.y);
@@ -858,7 +856,6 @@ void draw_triangle_nearest_final(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Ve
                            Vec3 norm0, Vec3 norm1, Vec3 norm2) {
   if(src->pixels == 0) return;
 
-  U64 fill_pixels_begin = __rdtsc();
 
   F32 region_min_x = 0;
   F32 region_min_y = 0;
@@ -877,6 +874,8 @@ void draw_triangle_nearest_final(Bitmap* dst, F32 *depth_buffer, Bitmap *src, Ve
 
   if (min_y >= max_y) return;
   if (min_x >= max_x) return;
+
+  U64 fill_pixels_begin = __rdtsc();
 
   F32 dy10 = (p1.y - p0.y);
   F32 dy21 = (p2.y - p1.y);

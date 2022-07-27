@@ -18,4 +18,6 @@ data.txt
 *.bin
 *.4c
 asset.log.txt
-perfclocks.txt
+perfclocks*
+*.ipynb
+zmiany

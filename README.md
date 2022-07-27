@@ -1,4 +1,27 @@
 
+# Realtime Software Renderer
+
+![screenshot1](assets/Screenshot1.png)
+![screenshot2](assets/Screenshot2.png)
+
+
+## Clipping
+
+There are 3 clipping stages, 2 clipping stages in 3D space against zfar and znear and 1 clipping
+stage in 2D against left, bottom, right, top(2D image bounds).
+
+First the triangles get clipped against the zfar plane,
+if a triangle has even one vertex outside the clipping region, the entire triangle gets cut.
+So far I didn't have problems with that. It simplifies the computations and splitting triangles
+on zfar seems like a waste of power.
+
+The second clipping stage is znear plane. Triangles get fully and nicely clipped against znear.
+Every time a triangle gets partially outside the clipping region it gets cut to the znear and
+either one or two new triangles get derived from the old one.
+
+Last clipping stage is performed in the 2D image space. Every triangle has a corresponding AABB
+box. In this box every pixel gets tested to see if it's in the triangle. In this clipping stage
+the box is clipped to the image metrics - 0, 0, width, height.
 
 ### Things to do:
 
@@ -43,7 +66,7 @@
   - [ ] Outlines
 - [ ] Lightning
   - [ ] Proper normal interpolation
-    * `https://hero.handmade.network/episode/code/day101/#105
+    * https://hero.handmade.network/episode/code/day101/#105
   - [ ] Phong
     - [x] diffuse
     - [x] ambient
@@ -57,14 +80,15 @@
 - [x] Simple profiling tooling
 - [x] Statistics based on profiler data
 - [x] Find cool profilers - ExtraSleepy, Vtune
-- [ ] Optimizations
-  - [ ] Inline edge function
-  - [ ] Expand edge functions to more optimized version
-  - [ ] Test 4x2 bitmap layout?
-  - [ ] Edge function to integer
-  - [ ] Use integer bit operations to figure out if plus. (edge0|edge1|edge2)>=0
-  - [ ] SIMD
-  - [ ] Multithreading
+- [x] Optimizations
+  - [x] Inline edge function
+  - [x] Expand edge functions to more optimized version
+  - [-] Test 4x2 bitmap layout?
+  - [-] Edge function to integer
+  - [-] Use integer bit operations to figure out if plus. (edge0|edge1|edge2)>=0
+  - [x] SIMD
+  - [x] Optimized SIMD
+  - [x] Multithreading
 
 - [x] Text rendering
 - [ ] UI
@@ -76,31 +100,8 @@
 - [x] Gamma correct alpha blending for rectangles and bitmaps
 - [ ] Plotting of profile data
    - [x] Simple scatter plot
-
-
-### Urgent:
-
-- [ ] Simplify the code, especially for the 2d routines
 - [x] Asset processor as second program
 
-
-## Clipping
-
-There are 3 clipping stages, 2 clipping stages in 3D space against zfar and znear and 1 clipping
-stage in 2D against left, bottom, right, top(2D image bounds).
-
-First the triangles get clipped against the zfar plane,
-if a triangle has even one vertex outside the clipping region, the entire triangle gets cut.
-So far I didn't have problems with that. It simplifies the computations and splitting triangles
-on zfar seems like a waste of power.
-
-The second clipping stage is znear plane. Triangles get fully and nicely clipped against znear.
-Every time a triangle gets partially outside the clipping region it gets cut to the znear and
-either one or two new triangles get derived from the old one.
-
-Last clipping stage is performed in the 2D image space. Every triangle has a corresponding AABB
-box. In this box every pixel gets tested to see if it's in the triangle. In this clipping stage
-the box is clipped to the image metrics - 0, 0, width, height.
 
 
 
