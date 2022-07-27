@@ -1,4 +1,4 @@
-#include "multimedia.cpp"
+#include "base_multimedia.cpp"
 #include "obj.cpp"
 
 #define STBI_ASSERT assert

@@ -1,7 +1,7 @@
 
 # Realtime Software Renderer
 
-Optimized realtime software renderer. I tried to optimize it so that it can render Sponza Palace at 30fps on my machine. It uses multithreading and vector/SIMD instructions.
+Optimized realtime software renderer. Renders Sponza Palace at 30FPS(on Ryzen 5800U), it was optimized using SIMD instructions and multithreading.
 
 ![screenshot1](assets/Screenshot1.png)
 ![screenshot2](assets/Screenshot2.png)

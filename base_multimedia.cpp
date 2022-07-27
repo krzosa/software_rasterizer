@@ -1,6 +1,6 @@
 #include "base.cpp"
 #include "base_unicode.cpp"
-#include "os_windows.cpp"
+#include "base_os_windows.cpp"
 
 #include <Windows.h>
 #include <shellscalingapi.h>
