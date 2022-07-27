@@ -120,7 +120,7 @@ union Intern_String{  // Basically just String
 global String string_null = {(U8 *)"null", 4};
 #include <stdio.h>
 #define STB_SPRINTF_IMPLEMENTATION
-#include "stb_sprintf.h"
+#include "dependencies/stb_sprintf.h"
 #define snprintf stbsp_snprintf
 
 

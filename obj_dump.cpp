@@ -3,7 +3,7 @@
 
 #define STBI_ASSERT assert
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "dependencies/stb_image.h"
 
 enum class Obj_Token_Type {
   none, word, number, whitespace, end
