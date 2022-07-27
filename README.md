@@ -42,6 +42,14 @@ Last clipping stage is performed in the 2D image space. Every triangle has a cor
 box. In this box every pixel gets tested to see if it's in the triangle. In this clipping stage
 the box is clipped to the image metrics - 0, 0, width, height.
 
+## Source reading guide
+
+* main.cpp contains all the relevent drawing routines, including the optimized triangle rasterizing and other stuff like rendering text bitmaps
+* base files act as a standard library
+* base.cpp contains used data structures
+* os_windows_base.cpp contains platform specific code that base partially depends on
+* os_windows_multimedia.cpp deals with creating a window, creating a writable framebuffer etc.
+
 ## Building
 
 1. Download Visual Studio and Clang
