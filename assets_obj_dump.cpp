@@ -1,5 +1,5 @@
 #include "os_windows_multimedia.cpp"
-#include "sf_obj.cpp"
+#include "assets_obj.cpp"
 
 #define STBI_ASSERT assert
 #define STB_IMAGE_IMPLEMENTATION

@@ -1,5 +1,5 @@
 
-#include "sf_obj_dump.cpp"
+#include "assets_obj_dump.cpp"
 #include "sf_vec.cpp"
 #include "sf_work_queue.cpp"
 #define PROFILE_SCOPE(x)
@@ -220,7 +220,7 @@ S32 render_triangle_test_case_angle = -1;
 U64 filled_pixel_count;
 U64 filled_pixel_cycles;
 U64 triangle_count;
-#include "optimization_log.cpp"
+#include "sf_optimization_log.cpp"
 
 
 function
