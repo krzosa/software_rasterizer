@@ -525,8 +525,7 @@ api void os_set_window_size(S32 x, S32 y) {
   Vec2I border = get_border_size(w32(os).window);
   int actual_width = (int)(x + border.x);
   int actual_height = (int)(y + border.y);
-  bool result =
-    SetWindowPos(w32(os).window, 0, 0, 0, actual_width, actual_height, SWP_NOMOVE | SWP_NOOWNERZORDER);
+  bool result = SetWindowPos(w32(os).window, 0, 0, 0, actual_width, actual_height, SWP_NOMOVE | SWP_NOOWNERZORDER);
   assert_msg(result, "SetWindowPos returned invalid value");
   os.window_size = get_window_size(w32(os).window);
 }
